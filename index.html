@@ -158,6 +158,22 @@ select:focus,input:focus{border-color:#1a1a1a;}
         </div>
       </div>
 
+      <div id="m-return-section" style="display:none;">
+        <hr class="divider">
+        <p class="section-title">반품 처리 (3창고)</p>
+        <div style="max-width:50%;margin-bottom:10px;">
+          <p class="form-label">반품 처리 건수</p>
+          <input type="number" id="m-return-count" min="0" value="0">
+        </div>
+        <p class="section-label">반품 알바</p>
+        <div class="sub-box">
+          <div class="form-row" style="margin-bottom:0;">
+            <div><p class="form-label">인원 수</p><input type="number" id="m-return-staff" min="0" value="0"></div>
+            <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-return-hours" min="0" step="0.5" value="0"></div>
+          </div>
+        </div>
+      </div>
+
       <hr class="divider">
       <p class="section-title">파레트랙 공간 현황</p>
       <div class="form-row3">
@@ -220,6 +236,13 @@ select:focus,input:focus{border-color:#1a1a1a;}
       <div class="metric"><p class="label">1창고</p><p class="value" id="gross1">—</p><p class="sub" id="gross1s">데이터 없음</p></div>
       <div class="metric"><p class="label">2창고</p><p class="value" id="gross2">—</p><p class="sub" id="gross2s">데이터 없음</p></div>
       <div class="metric"><p class="label">3창고</p><p class="value" id="gross3">—</p><p class="sub" id="gross3s">데이터 없음</p></div>
+    </div>
+
+    <p class="section-title" style="margin-bottom:6px;">반품 처리 효율 <span style="font-size:11px;font-weight:400;color:#888;">3창고 반품 건수 ÷ 반품 알바 투입시간</span></p>
+    <div class="grid3" style="margin-bottom:16px;">
+      <div class="metric"><p class="label">1창고</p><p class="value">—</p><p class="sub">해당 없음</p></div>
+      <div class="metric"><p class="label">2창고</p><p class="value">—</p><p class="sub">해당 없음</p></div>
+      <div class="metric"><p class="label">3창고</p><p class="value" id="ret3">—</p><p class="sub" id="ret3s">데이터 없음</p></div>
     </div>
 
     <div class="card">
@@ -291,9 +314,11 @@ function showToast(msg){
 
 function updateWhView(){
   var wh=document.getElementById('m-wh').value;
-  var show=wh==='2창고'||wh==='3창고';
-  document.getElementById('m-haul-section').style.display=show?'block':'none';
-  document.getElementById('m-container-section').style.display=show?'block':'none';
+  var show23=wh==='2창고'||wh==='3창고';
+  var show3=wh==='3창고';
+  document.getElementById('m-haul-section').style.display=show23?'block':'none';
+  document.getElementById('m-container-section').style.display=show23?'block':'none';
+  document.getElementById('m-return-section').style.display=show3?'block':'none';
 }
 
 function updateRackPreview(){
@@ -332,6 +357,9 @@ async function saveManagerData(){
     pallet:parseInt(document.getElementById('m-pallet').value)||0,
     box:parseInt(document.getElementById('m-box').value)||0,
     container:is1?0:(parseInt(document.getElementById('m-container').value)||0),
+    returnCount:wh==='3창고'?(parseInt(document.getElementById('m-return-count').value)||0):0,
+    returnStaff:wh==='3창고'?(parseInt(document.getElementById('m-return-staff').value)||0):0,
+    returnHours:wh==='3창고'?(parseFloat(document.getElementById('m-return-hours').value)||0):0,
     rackRemain:parseInt(document.getElementById('m-rack-remain').value)||0,
     rackTotal:parseInt(document.getElementById('m-rack-total').value)||0,
     note:document.getElementById('m-note').value,
@@ -474,7 +502,10 @@ function calcMetrics(out,mgr,wh){
   var avgBundle=multi&&multi>0?Math.round(((score||0)-(single||0))/multi*10)/10:null;
   var grossPerH=pallet>0&&grossH>0?Math.round(pallet/grossH*10)/10:null;
   var minPerPallet=pallet>0&&grossH>0?Math.round(grossH*60/pallet):null;
-  return{pickEff,packEff,dep,score,outTotal,single,multi,staffH,pickH,packH,grossH,pallet,totalPickH,totalOutH,bundleRatio,avgBundle,grossPerH,minPerPallet};
+  var returnCount=mgr.returnCount||0;
+  var returnH=mgr.returnHours||0;
+  var returnEff=returnCount>0&&returnH>0?Math.round(returnCount/returnH*10)/10:null;
+  return{pickEff,packEff,dep,score,outTotal,single,multi,staffH,pickH,packH,grossH,pallet,totalPickH,totalOutH,bundleRatio,avgBundle,grossPerH,minPerPallet,returnCount,returnH,returnEff};
 }
 
 async function refreshDashboard(){
@@ -537,6 +568,17 @@ async function refreshDashboard(){
       ge.textContent='—';ges.textContent='데이터 없음';
     }
   });
+  var m3=calcMetrics(out,mgrData['3창고'],'3창고');
+  var ret3El=document.getElementById('ret3'),ret3sEl=document.getElementById('ret3s');
+  if(m3&&m3.returnEff!==null){
+    ret3El.textContent=m3.returnEff+'/h';
+    ret3sEl.textContent='반품 '+m3.returnCount+'건 / '+m3.returnH+'h';
+  }else if(m3&&m3.returnCount>0){
+    ret3El.textContent=m3.returnCount+'건';
+    ret3sEl.textContent='반품알바 미입력';
+  }else{
+    ret3El.textContent='—';ret3sEl.textContent=m3?'반품 없음':'데이터 없음';
+  }
   document.getElementById('rack-status').innerHTML=hasRack?rackHtml:'<p style="font-size:13px;color:#888;">파레트랙 데이터가 없습니다.</p>';
 
   var detailHtml='';
@@ -560,6 +602,9 @@ async function refreshDashboard(){
       {label:'피킹 효율',bold:true,fn:function(wh){var m=calcMetrics(out,mgrData[wh],wh);return m&&m.pickEff!==null?m.pickEff+'/h':'—';}},
       {label:'포장 효율',bold:true,fn:function(wh){var m=calcMetrics(out,mgrData[wh],wh);return m&&m.packEff!==null?m.packEff+'/h':'—';}},
       {label:'알바 의존도',bold:true,fn:function(wh){var m=calcMetrics(out,mgrData[wh],wh);return m&&m.dep!==null?m.dep+'%':'—';}},
+      {label:'반품 처리 건수',fn:function(wh){var m=mgrData[wh];return m&&m.returnCount?m.returnCount+'건':'—';}},
+      {label:'반품 알바',fn:function(wh){var m=mgrData[wh];return m&&m.returnHours?m.returnStaff+'명 / '+m.returnHours+'h':'—';}},
+      {label:'반품 처리 효율',bold:true,fn:function(wh){var m=calcMetrics(out,mgrData[wh],wh);return m&&m.returnEff!==null?m.returnEff+'/h':'—';}},
     ];
     rows2.forEach(function(row){
       detailHtml+='<tr style="border-top:1px solid #f0f0f0;">';
