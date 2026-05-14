@@ -201,11 +201,25 @@ select:focus,input:focus{border-color:#1a1a1a;}
       <div class="metric"><p class="label">3창고</p><p class="value" id="pack3">—</p><p class="sub" id="pack3s">데이터 없음</p></div>
     </div>
 
-    <p class="section-title" style="margin-bottom:6px;">알바 의존도 <span style="font-size:11px;font-weight:400;color:#888;">(피킹+포장 알바) ÷ 전체 출고 투입시간</span></p>
+    <p class="section-title" style="margin-bottom:6px;">알바 의존도 <span style="font-size:11px;font-weight:400;color:#888;">피킹 알바 ÷ (직원 + 피킹 알바) 투입시간</span></p>
     <div class="grid3">
       <div class="metric"><p class="label">1창고</p><p class="value" id="dep1">—</p><p class="sub" id="dep1s">데이터 없음</p></div>
       <div class="metric"><p class="label">2창고</p><p class="value" id="dep2">—</p><p class="sub" id="dep2s">데이터 없음</p></div>
       <div class="metric"><p class="label">3창고</p><p class="value" id="dep3">—</p><p class="sub" id="dep3s">데이터 없음</p></div>
+    </div>
+
+    <p class="section-title" style="margin-bottom:6px;">합포장 현황 <span style="font-size:11px;font-weight:400;color:#888;">합포장 비중 / 평균 묶음 크기</span></p>
+    <div class="grid3" style="margin-bottom:16px;">
+      <div class="metric"><p class="label">1창고</p><p class="value" id="bundle1">—</p><p class="sub" id="bundle1s">데이터 없음</p></div>
+      <div class="metric"><p class="label">2창고</p><p class="value" id="bundle2">—</p><p class="sub" id="bundle2s">데이터 없음</p></div>
+      <div class="metric"><p class="label">3창고</p><p class="value" id="bundle3">—</p><p class="sub" id="bundle3s">데이터 없음</p></div>
+    </div>
+
+    <p class="section-title" style="margin-bottom:6px;">그로스 작업량 <span style="font-size:11px;font-weight:400;color:#888;">시간당 파레트 / 파레트당 분</span></p>
+    <div class="grid3" style="margin-bottom:16px;">
+      <div class="metric"><p class="label">1창고</p><p class="value" id="gross1">—</p><p class="sub" id="gross1s">데이터 없음</p></div>
+      <div class="metric"><p class="label">2창고</p><p class="value" id="gross2">—</p><p class="sub" id="gross2s">데이터 없음</p></div>
+      <div class="metric"><p class="label">3창고</p><p class="value" id="gross3">—</p><p class="sub" id="gross3s">데이터 없음</p></div>
     </div>
 
     <div class="card">
@@ -445,14 +459,22 @@ function calcMetrics(out,mgr,wh){
   var staffH=mgr.staffHours||0;
   var pickH=mgr.pickHours||0;
   var packH=mgr.packHours||0;
+  var grossH=mgr.grossHours||0;
+  var pallet=mgr.pallet||0;
   var totalPickH=staffH+pickH;
   var totalOutH=totalPickH+packH;
   var score=out&&out.stats&&out.stats[wh]?out.stats[wh].score:null;
   var outTotal=out&&out.stats&&out.stats[wh]?out.stats[wh].total:null;
+  var single=out&&out.stats&&out.stats[wh]?out.stats[wh].single:null;
+  var multi=out&&out.stats&&out.stats[wh]?out.stats[wh].multi:null;
   var pickEff=score!==null&&totalPickH>0?Math.round(score/totalPickH*10)/10:null;
   var packEff=outTotal!==null&&packH>0?Math.round(outTotal/packH*10)/10:null;
-  var dep=totalOutH>0?Math.round((pickH+packH)/totalOutH*100):null;
-  return{pickEff,packEff,dep,score,outTotal,staffH,pickH,packH,totalPickH,totalOutH};
+  var dep=totalPickH>0?Math.round(pickH/totalPickH*100):null;
+  var bundleRatio=outTotal&&outTotal>0?Math.round(multi/outTotal*100):null;
+  var avgBundle=multi&&multi>0?Math.round(((score||0)-(single||0))/multi*10)/10:null;
+  var grossPerH=pallet>0&&grossH>0?Math.round(pallet/grossH*10)/10:null;
+  var minPerPallet=pallet>0&&grossH>0?Math.round(grossH*60/pallet):null;
+  return{pickEff,packEff,dep,score,outTotal,single,multi,staffH,pickH,packH,grossH,pallet,totalPickH,totalOutH,bundleRatio,avgBundle,grossPerH,minPerPallet};
 }
 
 async function refreshDashboard(){
@@ -476,7 +498,7 @@ async function refreshDashboard(){
       pa.textContent=m.packEff!==null?m.packEff+'/h':'—';
       pas.textContent=m.outTotal!==null?'출고 '+m.outTotal+'건 / 포장 '+m.packH+'h':m.packH>0?'엑셀 미업로드':'포장알바 미입력';
       de.textContent=m.dep!==null?m.dep+'%':'—';
-      des.textContent='직원 '+m.staffH+'h / 알바 '+(m.pickH+m.packH)+'h';
+      des.textContent='직원 '+m.staffH+'h / 피킹알바 '+m.pickH+'h';
     }else{
       pe.textContent='—';pes.textContent='데이터 없음';
       pa.textContent='—';pas.textContent='데이터 없음';
@@ -500,6 +522,21 @@ async function refreshDashboard(){
       rackHtml+='<div class="rack-bar-wrap"><div style="height:100%;border-radius:4px;background:'+barColor+';width:'+pct+'%;"></div></div></div>';
     }
   });
+  var bundleIds=['bundle1','bundle2','bundle3'],grossIds=['gross1','gross2','gross3'];
+  whs.forEach(function(wh,i){
+    var m=calcMetrics(out,mgrData[wh],wh);
+    var be=document.getElementById(bundleIds[i]),bes=document.getElementById(bundleIds[i]+'s');
+    var ge=document.getElementById(grossIds[i]),ges=document.getElementById(grossIds[i]+'s');
+    if(m){
+      be.textContent=m.bundleRatio!==null?m.bundleRatio+'%':'—';
+      bes.textContent=m.avgBundle!==null?'평균 '+m.avgBundle+'개/묶음':'엑셀 미업로드';
+      ge.textContent=m.grossPerH!==null?m.grossPerH+'파레트/h':'—';
+      ges.textContent=m.minPerPallet!==null?'파레트당 '+m.minPerPallet+'분':m.pallet>0?'그로스알바 미입력':'그로스 없음';
+    }else{
+      be.textContent='—';bes.textContent='데이터 없음';
+      ge.textContent='—';ges.textContent='데이터 없음';
+    }
+  });
   document.getElementById('rack-status').innerHTML=hasRack?rackHtml:'<p style="font-size:13px;color:#888;">파레트랙 데이터가 없습니다.</p>';
 
   var detailHtml='';
@@ -517,7 +554,7 @@ async function refreshDashboard(){
       {label:'포장 알바',fn:function(wh){var m=mgrData[wh];return m?m.packStaff+'명 / '+m.packHours+'h':'—';}},
       {label:'그로스 알바',fn:function(wh){var m=mgrData[wh];return m&&m.grossHours?m.grossStaff+'명 / '+m.grossHours+'h':'—';}},
       {label:'하역 알바',fn:function(wh){var m=mgrData[wh];return m&&m.haulHours?m.haulStaff+'명 / '+m.haulHours+'h':'—';}},
-      {label:'그로스 파레트',fn:function(wh){return mgrData[wh]?mgrData[wh].pallet+'개':'—';}},
+      {label:'그로스 작업 파레트',fn:function(wh){return mgrData[wh]?mgrData[wh].pallet+'개':'—';}},
       {label:'컨테이너',fn:function(wh){var m=mgrData[wh];return m&&m.container?m.container+'개':'—';}},
       {label:'파레트랙 사용률',fn:function(wh){var m=mgrData[wh];if(!m||!m.rackTotal)return '—';return Math.round((m.rackTotal-m.rackRemain)/m.rackTotal*100)+'% (잔여 '+m.rackRemain+')';}},
       {label:'피킹 효율',bold:true,fn:function(wh){var m=calcMetrics(out,mgrData[wh],wh);return m&&m.pickEff!==null?m.pickEff+'/h':'—';}},
