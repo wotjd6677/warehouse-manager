@@ -253,6 +253,11 @@ waitFirebase(function(){
 });
 
 function showTab(t){
+  if(t==='dashboard'){
+    var pw=prompt('대표 비밀번호를 입력하세요');
+    if(pw===null)return;
+    if(pw!=='carpediem1224!!'){alert('비밀번호가 틀렸습니다.');return;}
+  }
   document.getElementById('view-manager').style.display=t==='manager'?'block':'none';
   document.getElementById('view-dashboard').style.display=t==='dashboard'?'block':'none';
   document.getElementById('tab-manager').classList.toggle('active',t==='manager');
