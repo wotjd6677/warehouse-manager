@@ -262,7 +262,13 @@ select:focus,input:focus{border-color:#1a1a1a;}
       <p class="chart-label">포장 효율</p>
       <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="pack-chart"></canvas></div>
       <p class="chart-label">알바 의존도</p>
-      <div style="position:relative;height:180px;"><canvas id="dep-chart"></canvas></div>
+      <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="dep-chart"></canvas></div>
+      <p class="chart-label">파레트랙 사용률 (%)</p>
+      <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="rack-chart"></canvas></div>
+      <p class="chart-label">그로스 작업량 (파레트당 분)</p>
+      <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="gross-chart"></canvas></div>
+      <p class="chart-label">반품 처리 효율 — 3창고 (건/h)</p>
+      <div style="position:relative;height:180px;"><canvas id="return-chart"></canvas></div>
     </div>
 
     <div class="card">
@@ -274,7 +280,7 @@ select:focus,input:focus{border-color:#1a1a1a;}
 <div class="toast" id="toast"></div>
 
 <script>
-var pickChart=null,packChart=null,depChart=null;
+var pickChart=null,packChart=null,depChart=null,rackChart=null,grossChart=null,returnChart=null;
 var isFirebaseReady=false;
 
 function waitFirebase(cb){
@@ -686,6 +692,35 @@ async function renderTrendCharts(){
     depChart=new Chart(document.getElementById('dep-chart'),{type:'line',
       data:{labels,datasets:[ds('1창고',d1,'#378ADD'),ds('2창고',d2,'#1D9E75'),ds('3창고',d3,'#D85A30')]},
       options:{...baseOpts,scales:{...baseOpts.scales,y:{min:0,max:100,ticks:{callback:function(v){return v+'%'},font:{size:11}},grid:{color:'rgba(0,0,0,0.05)'}}}}});
+
+    var rack1=[],rack2=[],rack3=[],gph1=[],gph2=[],gph3=[],ret3=[];
+    for(var i=0;i<entries.length;i++){
+      var d=entries[i];
+      var mgrs2={};
+      for(var j=0;j<3;j++){
+        var wh2=['1창고','2창고','3창고'][j];
+        mgrs2[wh2]=await getMgr(d.date,wh2);
+      }
+      var r1=mgrs2['1창고'],r2=mgrs2['2창고'],r3=mgrs2['3창고'];
+      rack1.push(r1&&r1.rackTotal>0?Math.round((r1.rackTotal-r1.rackRemain)/r1.rackTotal*100):null);
+      rack2.push(r2&&r2.rackTotal>0?Math.round((r2.rackTotal-r2.rackRemain)/r2.rackTotal*100):null);
+      rack3.push(r3&&r3.rackTotal>0?Math.round((r3.rackTotal-r3.rackRemain)/r3.rackTotal*100):null);
+      var m1g=calcMetrics(d,r1,'1창고'),m2g=calcMetrics(d,r2,'2창고'),m3g=calcMetrics(d,r3,'3창고');
+      gph1.push(m1g?m1g.minPerPallet:null);
+      gph2.push(m2g?m2g.minPerPallet:null);
+      gph3.push(m3g?m3g.minPerPallet:null);
+      ret3.push(m3g?m3g.returnEff:null);
+    }
+    var pctOpts={...baseOpts,scales:{...baseOpts.scales,y:{min:0,max:100,ticks:{callback:function(v){return v+'%'},font:{size:11}},grid:{color:'rgba(0,0,0,0.05)'}}}};
+    if(rackChart)rackChart.destroy();
+    rackChart=new Chart(document.getElementById('rack-chart'),{type:'line',
+      data:{labels,datasets:[ds('1창고',rack1,'#378ADD'),ds('2창고',rack2,'#1D9E75'),ds('3창고',rack3,'#D85A30')]},options:pctOpts});
+    if(grossChart)grossChart.destroy();
+    grossChart=new Chart(document.getElementById('gross-chart'),{type:'line',
+      data:{labels,datasets:[ds('1창고',gph1,'#378ADD'),ds('2창고',gph2,'#1D9E75'),ds('3창고',gph3,'#D85A30')]},options:baseOpts});
+    if(returnChart)returnChart.destroy();
+    returnChart=new Chart(document.getElementById('return-chart'),{type:'line',
+      data:{labels,datasets:[ds('3창고',ret3,'#D85A30')]},options:baseOpts});
   }catch(e){}
 }
 
