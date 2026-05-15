@@ -4,15 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>창고 운영 관리</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
-const SHEETS_API_KEY = 'AIzaSyCfmn6uiBVv8GfFjRE47kw0dWipwhoenzk';
-const SHEET_ID_1 = '1nMLnF1QAvcHH_WOVpW5wH4Je6L7GytihSZ4ebMW3sro';
-
 const firebaseConfig = {
   apiKey: "AIzaSyAYpkKy1UyFlYRK-dJBQ7z0D-4Zlp0u8TM",
   authDomain: "warehouse-manager-6174e.firebaseapp.com",
@@ -22,297 +21,539 @@ const firebaseConfig = {
   messagingSenderId: "898278376972",
   appId: "1:898278376972:web:e4f7268a7ce787e15c9029"
 };
-
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-
-window.dbSet = async function(path, val) {
-  await set(ref(db, path), val);
-};
-window.dbGet = async function(path) {
-  const snap = await get(child(ref(db), path));
-  return snap.exists() ? snap.val() : null;
-};
-
+window.dbSet = async (path, val) => { await set(ref(db, path), val); };
+window.dbGet = async (path) => { const snap = await get(child(ref(db), path)); return snap.exists() ? snap.val() : null; };
 window.firebaseReady = true;
 window.dispatchEvent(new Event('firebaseReady'));
 </script>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;background:#f5f5f5;color:#1a1a1a;}
-.container{max-width:720px;margin:0 auto;padding:16px;}
-.tab-wrap{display:flex;gap:8px;margin-bottom:20px;}
-.tab-btn{padding:8px 20px;font-size:14px;border:1px solid #ddd;background:#fff;cursor:pointer;border-radius:8px;color:#666;}
-.tab-btn.active{background:#1a1a1a;color:#fff;border-color:#1a1a1a;}
-.card{background:#fff;border:1px solid #e5e5e5;border-radius:12px;padding:16px 20px;margin-bottom:12px;}
-.metric{background:#f5f5f5;border-radius:8px;padding:12px;}
-.metric .label{font-size:11px;color:#888;margin-bottom:4px;}
-.metric .value{font-size:22px;font-weight:500;margin-bottom:2px;}
-.metric .sub{font-size:11px;color:#888;}
-.section-title{font-size:13px;font-weight:600;color:#1a1a1a;margin-bottom:10px;}
-.section-label{font-size:13px;color:#666;margin-bottom:8px;}
-.form-label{font-size:12px;color:#666;margin-bottom:4px;}
-.hint{font-size:11px;color:#aaa;margin-top:4px;}
-.row-item{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-top:1px solid #f0f0f0;font-size:13px;}
-select,input[type=number],input[type=date],input[type=text]{width:100%;font-size:14px;padding:8px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#1a1a1a;outline:none;}
-select:focus,input:focus{border-color:#1a1a1a;}
-.save-btn{width:100%;padding:11px;font-size:14px;font-weight:600;cursor:pointer;border:none;border-radius:8px;background:#1a1a1a;color:#fff;margin-top:10px;}
-.save-btn:hover{background:#333;}
-.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px;}
-.form-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;}
-.form-row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px;}
-.divider{border:none;border-top:1px solid #f0f0f0;margin:14px 0;}
-.sub-box{background:#f9f9f9;border-radius:8px;padding:10px 12px;margin-bottom:10px;}
-.rack-bar-wrap{background:#eee;border-radius:4px;height:8px;overflow:hidden;margin-top:4px;}
-.badge{font-size:11px;padding:2px 8px;border-radius:6px;}
-.badge-ok{background:#e6f4ea;color:#1e7e34;}
-.badge-warn{background:#fff3cd;color:#856404;}
-.badge-danger{background:#fdecea;color:#c62828;}
-.chart-label{font-size:12px;color:#666;margin:12px 0 4px;}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;border-radius:8px;padding:10px 20px;font-size:13px;display:none;z-index:99;}
-.loading{text-align:center;padding:20px;color:#888;font-size:13px;}
+:root {
+  --bg: #f7f7f5; --bg-soft: #efefec; --surface: #ffffff;
+  --ink: #1a1a1a; --ink-2: #555; --ink-3: #999;
+  --line: #e5e5e0; --line-soft: #f0f0ec;
+  --accent: #1a1a1a; --accent-fg: #fff;
+  --pos: #16a34a; --pos-bg: #dcfce7;
+  --neg: #dc2626; --neg-bg: #fee2e2;
+  --warn: #d97706; --warn-bg: #fef3c7;
+  --blue: #2563eb; --green: #16a34a; --orange: #ea580c; --purple: #7c3aed;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08);
+  --r: 10px; --r-sm: 6px;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --transition: .15s ease;
+}
+html.dark {
+  --bg: #0f0f0e; --bg-soft: #1a1a18; --surface: #1f1f1d;
+  --ink: #f0f0ee; --ink-2: #aaa; --ink-3: #555;
+  --line: #2a2a28; --line-soft: #242422;
+  --accent: #f0f0ee; --accent-fg: #1a1a1a;
+  --pos: #4ade80; --pos-bg: #052e16;
+  --neg: #f87171; --neg-bg: #450a0a;
+  --warn: #fbbf24; --warn-bg: #422006;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
+  background: var(--bg); color: var(--ink);
+  font-size: 13px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--transition), color var(--transition);
+}
+
+/* HEADER */
+.app-header {
+  background: var(--accent); color: var(--accent-fg);
+  padding: 0 20px; height: 48px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.app-header h1 { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.app-header .dot { width: 6px; height: 6px; background: #f59e0b; border-radius: 50%; animation: pulse 2.4s infinite; }
+@keyframes pulse { 0%,100%{box-shadow:0 0 0 3px rgba(245,158,11,.2)} 50%{box-shadow:0 0 0 6px rgba(245,158,11,.05)} }
+.header-right { display: flex; align-items: center; gap: 8px; }
+.conn-badge { font-size: 11px; opacity: .6; }
+.icon-btn {
+  width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.08);
+  color: inherit; border-radius: 6px; cursor: pointer; transition: all var(--transition); font-size: 14px;
+}
+.icon-btn:hover { background: rgba(255,255,255,.16); }
+
+/* TABS */
+.tab-bar {
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  padding: 0 20px; display: flex; position: sticky; top: 48px; z-index: 99;
+}
+.tab-btn {
+  padding: 12px 16px; border: none; background: transparent;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  color: var(--ink-2); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color var(--transition), border-color var(--transition);
+}
+.tab-btn:hover { color: var(--ink); }
+.tab-btn.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+
+/* MAIN */
+.main { padding: 20px; max-width: 1000px; margin: 0 auto; }
+
+/* CARDS */
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 16px 20px; margin-bottom: 12px;
+  box-shadow: var(--shadow-sm);
+}
+.card-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin-bottom: 12px; }
+
+/* METRICS GRID */
+.metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
+.metric-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 12px 14px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+.metric-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.metric-card .wh-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 6px; }
+.metric-card .value { font-size: 20px; font-weight: 600; color: var(--ink); letter-spacing: -.02em; }
+.metric-card .sub { font-size: 11px; color: var(--ink-3); margin-top: 3px; }
+
+/* INSIGHT CARDS */
+.insights-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.insight {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--ink-3);
+  border-radius: var(--r); padding: 10px 14px;
+  box-shadow: var(--shadow-sm); font-size: 11px;
+}
+.insight.pos { border-left-color: var(--pos); }
+.insight.neg { border-left-color: var(--neg); }
+.insight.warn { border-left-color: var(--warn); }
+.insight .i-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin-bottom: 4px; }
+.insight .i-value { font-weight: 600; color: var(--ink); }
+.insight .i-sub { color: var(--ink-2); margin-top: 2px; }
+
+/* SECTION TITLE */
+.section-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.section-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.section-desc { font-size: 11px; color: var(--ink-3); }
+
+/* PERIOD FILTER */
+.period-bar {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 10px 14px; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  box-shadow: var(--shadow-sm);
+}
+.period-chip {
+  font-size: 11px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink-2);
+  cursor: pointer; font-family: inherit; transition: all var(--transition);
+}
+.period-chip:hover { color: var(--ink); border-color: var(--ink-3); }
+.period-chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+/* FORM */
+.form-label { font-size: 11px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+.hint { font-size: 11px; color: var(--ink-3); margin-top: 3px; }
+select, input[type=number], input[type=date], input[type=text] {
+  width: 100%; font-size: 13px; padding: 8px 10px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  border-radius: var(--r-sm); font-family: inherit; outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+select:focus, input:focus { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(0,0,0,.06); }
+html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
+.form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 10px; }
+.form-row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+.sub-box { background: var(--bg-soft); border-radius: var(--r-sm); padding: 10px 12px; margin-bottom: 10px; border: 1px solid var(--line-soft); }
+.divider { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
+.save-btn {
+  width: 100%; padding: 10px; font-size: 13px; font-weight: 600;
+  cursor: pointer; border: none; border-radius: var(--r-sm);
+  background: var(--accent); color: var(--accent-fg); margin-top: 8px;
+  font-family: inherit; transition: opacity var(--transition);
+}
+.save-btn:hover { opacity: .85; }
+.section-label { font-size: 13px; color: var(--ink-2); margin-bottom: 8px; }
+.section-ttl { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 10px; }
+
+/* RACK BAR */
+.rack-bar-wrap { background: var(--line); border-radius: 4px; height: 8px; overflow: hidden; margin-top: 4px; }
+.badge { font-size: 10px; padding: 2px 7px; border-radius: 4px; font-weight: 600; }
+.badge-ok { background: var(--pos-bg); color: var(--pos); }
+.badge-warn { background: var(--warn-bg); color: var(--warn); }
+.badge-danger { background: var(--neg-bg); color: var(--neg); }
+
+/* ROW ITEM */
+.row-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-top: 1px solid var(--line-soft); font-size: 13px; }
+
+/* TABLE */
+.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--bg-soft); }
+.data-table th.num { text-align: right; }
+.data-table td { padding: 7px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+.data-table td.num { text-align: right; }
+.data-table tbody tr:hover { background: var(--line-soft); }
+
+/* CHART LABEL */
+.chart-label { font-size: 11px; color: var(--ink-2); margin: 14px 0 6px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+
+/* TOAST */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  background: var(--accent); color: var(--accent-fg);
+  padding: 10px 16px; border-radius: var(--r-sm);
+  font-size: 12px; font-weight: 500; box-shadow: var(--shadow-md);
+  opacity: 0; transform: translateY(8px);
+  transition: opacity .2s, transform .2s; pointer-events: none; z-index: 200;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* CSV export btn */
+.export-btn {
+  font-size: 11px; padding: 5px 10px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink-2);
+  cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 5px;
+  transition: all var(--transition);
+}
+.export-btn:hover { border-color: var(--ink-3); color: var(--ink); }
+
+.loading { text-align: center; padding: 20px; color: var(--ink-3); font-size: 13px; }
 </style>
 </head>
 <body>
-<div class="container">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-    <h1 style="font-size:18px;font-weight:600;">창고 운영 관리</h1>
-    <span id="conn-status" style="font-size:12px;color:#aaa;">연결 중...</span>
+
+<div class="app-header">
+  <h1><span class="dot"></span>창고 운영 관리</h1>
+  <div class="header-right">
+    <span class="conn-badge" id="conn-status">연결 중...</span>
+    <button class="icon-btn" id="btn-theme" title="다크모드 전환">🌙</button>
   </div>
+</div>
 
-  <div class="tab-wrap">
-    <button class="tab-btn active" onclick="showTab('manager')" id="tab-manager">매니저 입력</button>
-    <button class="tab-btn" onclick="showTab('dashboard')" id="tab-dashboard">대표 대시보드</button>
-  </div>
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="showTab('manager')" id="tab-manager">매니저 입력</button>
+  <button class="tab-btn" onclick="showTab('dashboard')" id="tab-dashboard">대표 대시보드</button>
+</div>
 
-  <!-- 매니저 입력 -->
-  <div id="view-manager">
-    <div class="card">
-      <p class="section-label">창고 선택</p>
-      <select id="m-wh" onchange="updateWhView()" style="margin-bottom:12px;">
-        <option value="">창고를 선택하세요</option>
-        <option value="1창고">1창고</option>
-        <option value="2창고그린">2창고 그린</option>
-        <option value="2창고블루">2창고 블루</option>
-        <option value="3창고">3창고</option>
-      </select>
-      <p class="section-label">날짜</p>
-      <input type="date" id="m-date" style="margin-bottom:14px;">
+<div class="main">
 
-      <hr class="divider">
-      <p class="section-title">직원 (피킹 전담)</p>
-      <div style="max-width:50%;margin-bottom:4px;">
-        <p class="form-label">직원 수</p>
-        <input type="number" id="m-staff" min="0" value="0">
+<!-- 매니저 입력 -->
+<div id="view-manager">
+  <div class="card">
+    <p class="section-label">창고 선택</p>
+    <select id="m-wh" onchange="updateWhView()" style="margin-bottom:12px;">
+      <option value="">창고를 선택하세요</option>
+      <option value="1창고">1창고</option>
+      <option value="2창고그린">2창고 그린</option>
+      <option value="2창고블루">2창고 블루</option>
+      <option value="3창고">3창고</option>
+    </select>
+    <p class="section-label">날짜</p>
+    <input type="date" id="m-date" style="margin-bottom:14px;">
+
+    <hr class="divider">
+    <p class="section-ttl">직원 (피킹 전담)</p>
+    <div style="max-width:50%;margin-bottom:4px;">
+      <p class="form-label">직원 수</p>
+      <input type="number" id="m-staff" min="0" value="0">
+    </div>
+    <p class="hint">직원 수 × 8시간으로 자동 계산</p>
+
+    <hr class="divider">
+    <p class="section-ttl">알바</p>
+
+    <p class="section-label">피킹 알바</p>
+    <div class="sub-box">
+      <div class="form-row" style="margin-bottom:0;">
+        <div><p class="form-label">인원 수</p><input type="number" id="m-pick-staff" min="0" value="0"></div>
+        <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-pick-hours" min="0" step="0.5" value="0"></div>
       </div>
-      <p class="hint">※ 직원 수 × 8시간으로 자동 계산됩니다</p>
+      <p class="hint">예: 2명 × 8시간 = 16시간</p>
+    </div>
 
-      <hr class="divider">
-      <p class="section-title">알바</p>
+    <p class="section-label">포장 알바</p>
+    <div class="sub-box">
+      <div class="form-row" style="margin-bottom:0;">
+        <div><p class="form-label">인원 수</p><input type="number" id="m-pack-staff" min="0" value="0"></div>
+        <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-pack-hours" min="0" step="0.5" value="0"></div>
+      </div>
+    </div>
 
-      <p class="section-label">피킹 알바</p>
+    <p class="section-label">그로스 알바</p>
+    <div class="sub-box">
+      <div class="form-row" style="margin-bottom:0;">
+        <div><p class="form-label">인원 수</p><input type="number" id="m-gross-staff" min="0" value="0"></div>
+        <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-gross-hours" min="0" step="0.5" value="0"></div>
+      </div>
+    </div>
+
+    <div id="m-haul-section" style="display:none;">
+      <p class="section-label">하역 알바</p>
       <div class="sub-box">
         <div class="form-row" style="margin-bottom:0;">
-          <div><p class="form-label">인원 수</p><input type="number" id="m-pick-staff" min="0" value="0"></div>
-          <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-pick-hours" min="0" step="0.5" value="0"></div>
+          <div><p class="form-label">인원 수</p><input type="number" id="m-haul-staff" min="0" value="0"></div>
+          <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-haul-hours" min="0" step="0.5" value="0"></div>
         </div>
-        <p class="hint">예: 2명이 8시간 → 16시간</p>
       </div>
+    </div>
 
-      <p class="section-label">포장 알바</p>
+    <hr class="divider">
+    <p class="section-ttl">그로스 작업</p>
+    <div class="form-row">
+      <div><p class="form-label">파레트 수</p><input type="number" id="m-pallet" min="0" value="0"></div>
+      <div><p class="form-label">박스 수 (택배)</p><input type="number" id="m-box" min="0" value="0"></div>
+    </div>
+
+    <div id="m-container-section" style="display:none;">
+      <hr class="divider">
+      <p class="section-ttl">컨테이너 입고</p>
+      <div style="max-width:50%;">
+        <p class="form-label">컨테이너 수</p>
+        <input type="number" id="m-container" min="0" value="0">
+      </div>
+    </div>
+
+    <div id="m-return-section" style="display:none;">
+      <hr class="divider">
+      <p class="section-ttl">반품 처리 (3창고)</p>
+      <div style="max-width:50%;margin-bottom:10px;">
+        <p class="form-label">반품 처리 건수</p>
+        <input type="number" id="m-return-count" min="0" value="0">
+      </div>
+      <p class="section-label">반품 알바</p>
       <div class="sub-box">
         <div class="form-row" style="margin-bottom:0;">
-          <div><p class="form-label">인원 수</p><input type="number" id="m-pack-staff" min="0" value="0"></div>
-          <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-pack-hours" min="0" step="0.5" value="0"></div>
-        </div>
-        <p class="hint">예: 5명이 8시간 → 40시간</p>
-      </div>
-
-      <p class="section-label">그로스 알바</p>
-      <div class="sub-box">
-        <div class="form-row" style="margin-bottom:0;">
-          <div><p class="form-label">인원 수</p><input type="number" id="m-gross-staff" min="0" value="0"></div>
-          <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-gross-hours" min="0" step="0.5" value="0"></div>
+          <div><p class="form-label">인원 수</p><input type="number" id="m-return-staff" min="0" value="0"></div>
+          <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-return-hours" min="0" step="0.5" value="0"></div>
         </div>
       </div>
+    </div>
 
-      <div id="m-haul-section" style="display:none;">
-        <p class="section-label">하역 알바</p>
-        <div class="sub-box">
-          <div class="form-row" style="margin-bottom:0;">
-            <div><p class="form-label">인원 수</p><input type="number" id="m-haul-staff" min="0" value="0"></div>
-            <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-haul-hours" min="0" step="0.5" value="0"></div>
-          </div>
-        </div>
-      </div>
-
+    <div id="m-rack-section" style="display:none;">
       <hr class="divider">
-      <p class="section-title">그로스 작업</p>
-      <div class="form-row">
-        <div><p class="form-label">파레트 수</p><input type="number" id="m-pallet" min="0" value="0"></div>
-        <div><p class="form-label">박스 수 (택배)</p><input type="number" id="m-box" min="0" value="0"></div>
-      </div>
-
-      <div id="m-container-section" style="display:none;">
-        <hr class="divider">
-        <p class="section-title">컨테이너 입고</p>
-        <div style="max-width:50%;">
-          <p class="form-label">컨테이너 수</p>
-          <input type="number" id="m-container" min="0" value="0">
-        </div>
-      </div>
-
-      <div id="m-return-section" style="display:none;">
-        <hr class="divider">
-        <p class="section-title">반품 처리 (3창고)</p>
-        <div style="max-width:50%;margin-bottom:10px;">
-          <p class="form-label">반품 처리 건수</p>
-          <input type="number" id="m-return-count" min="0" value="0">
-        </div>
-        <p class="section-label">반품 알바</p>
-        <div class="sub-box">
-          <div class="form-row" style="margin-bottom:0;">
-            <div><p class="form-label">인원 수</p><input type="number" id="m-return-staff" min="0" value="0"></div>
-            <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-return-hours" min="0" step="0.5" value="0"></div>
-          </div>
-        </div>
-      </div>
-
-      <hr class="divider">
-      <div id="m-rack-section">
-      <p class="section-title">파레트랙 공간 현황</p>
+      <p class="section-ttl">파레트랙 공간 현황</p>
       <div class="form-row3">
         <div><p class="form-label">남은 자리</p><input type="number" id="m-rack-remain" min="0" value="0" oninput="updateRackPreview()"></div>
         <div><p class="form-label">전체 자리</p><input type="number" id="m-rack-total" min="0" value="0" oninput="updateRackPreview()"></div>
-        <div><p class="form-label">사용률</p><div style="padding:8px 0;"><span id="m-rack-pct" style="font-size:20px;font-weight:500;">—</span></div></div>
+        <div><p class="form-label">사용률</p><div style="padding:8px 0;"><span id="m-rack-pct" style="font-size:20px;font-weight:600;">—</span></div></div>
       </div>
-      <div class="rack-bar-wrap"><div id="m-rack-bar" style="height:100%;border-radius:4px;background:#378ADD;width:0%;transition:width 0.3s;"></div></div>
-      </div>
-
-      <hr class="divider">
-      <p class="section-title">특이사항 (선택)</p>
-      <input type="text" id="m-note" placeholder="예: 냉동 제품 입고 예정" style="margin-bottom:12px;">
-      <button class="save-btn" onclick="saveManagerData()">저장</button>
+      <div class="rack-bar-wrap"><div id="m-rack-bar" style="height:100%;border-radius:4px;background:var(--blue);width:0%;transition:width .3s;"></div></div>
     </div>
 
-    <div class="card">
-      <p class="section-label">최근 입력 내역</p>
-      <div id="recent-list"><p class="loading">로딩 중...</p></div>
-    </div>
+    <hr class="divider">
+    <p class="section-ttl">특이사항 (선택)</p>
+    <input type="text" id="m-note" placeholder="예: 냉동 제품 입고 예정" style="margin-bottom:12px;">
+    <button class="save-btn" onclick="saveManagerData()">저장</button>
   </div>
 
-  <!-- 대표 대시보드 -->
-  <div id="view-dashboard" style="display:none;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-      <input type="date" id="d-date" style="width:160px;">
-      <button onclick="document.getElementById('d-file').click()" style="font-size:13px;padding:7px 14px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;">주문 엑셀 업로드</button>
-      <input type="file" id="d-file" accept=".xlsx" style="display:none;" onchange="handleExcel(this)">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <p class="card-title">최근 입력 내역</p>
     </div>
-
-    <p class="section-title" style="margin-bottom:6px;">피킹 효율 <span style="font-size:11px;font-weight:400;color:#888;">출고 작업량 ÷ 피킹 총 투입시간</span></p>
-    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:1.25rem;">
-      <div class="metric"><p class="label">1창고</p><p class="value" id="pick1">—</p><p class="sub" id="pick1s">데이터 없음</p></div>
-      <div class="metric"><p class="label">2창고 그린</p><p class="value" id="pick2g">—</p><p class="sub" id="pick2gs">데이터 없음</p></div>
-      <div class="metric"><p class="label">2창고 블루</p><p class="value" id="pick2b">—</p><p class="sub" id="pick2bs">데이터 없음</p></div>
-      <div class="metric"><p class="label">3창고</p><p class="value" id="pick3">—</p><p class="sub" id="pick3s">데이터 없음</p></div>
-    </div>
-
-    <p class="section-title" style="margin-bottom:6px;">포장 효율 <span style="font-size:11px;font-weight:400;color:#888;">전체 출고 건수 ÷ 포장 알바 투입시간</span></p>
-        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px;">
-      <div class="metric"><p class="label">1창고</p><p class="value" id="pack1">—</p><p class="sub" id="pack1s">데이터 없음</p></div>
-      <div class="metric"><p class="label">2창고 그린</p><p class="value" id="pack2g">—</p><p class="sub" id="pack2gs">데이터 없음</p></div>
-      <div class="metric"><p class="label">2창고 블루</p><p class="value" id="pack2b">—</p><p class="sub" id="pack2bs">데이터 없음</p></div>
-      <div class="metric"><p class="label">3창고</p><p class="value" id="pack3">—</p><p class="sub" id="pack3s">데이터 없음</p></div>
-    </div>
-
-    <p class="section-title" style="margin-bottom:6px;">알바 의존도 <span style="font-size:11px;font-weight:400;color:#888;">피킹 알바 ÷ (직원 + 피킹 알바) 투입시간</span></p>
-        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px;">
-      <div class="metric"><p class="label">1창고</p><p class="value" id="dep1">—</p><p class="sub" id="dep1s">데이터 없음</p></div>
-      <div class="metric"><p class="label">2창고 그린</p><p class="value" id="dep2g">—</p><p class="sub" id="dep2gs">데이터 없음</p></div>
-      <div class="metric"><p class="label">2창고 블루</p><p class="value" id="dep2b">—</p><p class="sub" id="dep2bs">데이터 없음</p></div>
-      <div class="metric"><p class="label">3창고</p><p class="value" id="dep3">—</p><p class="sub" id="dep3s">데이터 없음</p></div>
-    </div>
-
-    <p class="section-title" style="margin-bottom:6px;">합포장 현황 <span style="font-size:11px;font-weight:400;color:#888;">합포장 비중 / 평균 묶음 크기</span></p>
-        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px;">
-      <div class="metric"><p class="label">1창고</p><p class="value" id="bundle1">—</p><p class="sub" id="bundle1s">데이터 없음</p></div>
-      <div class="metric"><p class="label">2창고 그린</p><p class="value" id="bundle2g">—</p><p class="sub" id="bundle2gs">데이터 없음</p></div>
-      <div class="metric"><p class="label">2창고 블루</p><p class="value" id="bundle2b">—</p><p class="sub" id="bundle2bs">데이터 없음</p></div>
-      <div class="metric"><p class="label">3창고</p><p class="value" id="bundle3">—</p><p class="sub" id="bundle3s">데이터 없음</p></div>
-    </div>
-
-    <p class="section-title" style="margin-bottom:6px;">그로스 작업량 <span style="font-size:11px;font-weight:400;color:#888;">시간당 파레트 / 파레트당 분</span></p>
-        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px;">
-      <div class="metric"><p class="label">1창고</p><p class="value" id="gross1">—</p><p class="sub" id="gross1s">데이터 없음</p></div>
-      <div class="metric"><p class="label">2창고 그린</p><p class="value" id="gross2g">—</p><p class="sub" id="gross2gs">데이터 없음</p></div>
-      <div class="metric"><p class="label">2창고 블루</p><p class="value" id="gross2b">—</p><p class="sub" id="gross2bs">데이터 없음</p></div>
-      <div class="metric"><p class="label">3창고</p><p class="value" id="gross3">—</p><p class="sub" id="gross3s">데이터 없음</p></div>
-    </div>
-
-    <p class="section-title" style="margin-bottom:6px;">반품 처리 효율 <span style="font-size:11px;font-weight:400;color:#888;">3창고 반품 건수 ÷ 반품 알바 투입시간</span></p>
-    <div class="grid3" style="margin-bottom:16px;">
-      <div class="metric"><p class="label">1창고</p><p class="value">—</p><p class="sub">해당 없음</p></div>
-      <div class="metric"><p class="label">2창고</p><p class="value">—</p><p class="sub">해당 없음</p></div>
-      <div class="metric"><p class="label">3창고</p><p class="value" id="ret3">—</p><p class="sub" id="ret3s">데이터 없음</p></div>
-    </div>
-
-    <div class="card">
-      <p class="section-title">파레트랙 공간 현황</p>
-      <div id="rack-status"><p style="font-size:13px;color:#888;">데이터 없음</p></div>
-    </div>
-
-    <div class="card">
-      <p class="section-label">날짜별 상세</p>
-      <div id="daily-detail"><p style="font-size:13px;color:#888;">날짜를 선택하고 엑셀을 업로드하면 데이터가 표시됩니다.</p></div>
-    </div>
-
-    <div class="card">
-      <p class="section-label">추이 차트</p>
-      <p class="chart-label">피킹 효율</p>
-      <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="pick-chart"></canvas></div>
-      <p class="chart-label">포장 효율</p>
-      <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="pack-chart"></canvas></div>
-      <p class="chart-label">알바 의존도</p>
-      <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="dep-chart"></canvas></div>
-      <p class="chart-label">파레트랙 사용률 (%)</p>
-      <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="rack-chart"></canvas></div>
-      <p class="chart-label">그로스 작업량 (파레트당 분)</p>
-      <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="gross-chart"></canvas></div>
-      <p class="chart-label">반품 처리 효율 — 3창고 (건/h)</p>
-      <div style="position:relative;height:180px;"><canvas id="return-chart"></canvas></div>
-    </div>
-
-    <div class="card">
-      <p class="section-title">개인별 생산성 (1창고)</p>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <p style="font-size:12px;color:#888;">시트 전체 기준 개인별 송장 수</p>
-        <button onclick="loadProductivity()" style="font-size:13px;padding:7px 14px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;">불러오기</button>
-      </div>
-      <div id="productivity-result"><p style="font-size:13px;color:#888;">불러오기를 클릭하세요.</p></div>
-    </div>
-
-    <div class="card">
-      <p class="section-label">누적 데이터</p>
-      <div id="history-list"><p style="font-size:13px;color:#888;">저장된 데이터가 없습니다.</p></div>
-    </div>
+    <div id="recent-list"><p class="loading">로딩 중...</p></div>
   </div>
 </div>
+
+<!-- 대표 대시보드 -->
+<div id="view-dashboard" style="display:none;">
+
+  <!-- 날짜 + 기간 필터 -->
+  <div class="period-bar">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);">날짜</span>
+      <input type="date" id="d-date" style="width:150px;">
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button class="period-chip on" data-range="day" onclick="setPeriod('day',this)">일별</button>
+      <button class="period-chip" data-range="week" onclick="setPeriod('week',this)">주간</button>
+      <button class="period-chip" data-range="month" onclick="setPeriod('month',this)">월간</button>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+      <button onclick="document.getElementById('d-file').click()" style="font-size:12px;padding:6px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);cursor:pointer;font-family:inherit;color:var(--ink);display:flex;align-items:center;gap:5px;">
+        📤 주문 엑셀 업로드
+      </button>
+      <button class="export-btn" onclick="exportCSV()">⬇ CSV</button>
+      <input type="file" id="d-file" accept=".xlsx" style="display:none;" onchange="handleExcel(this)">
+    </div>
+  </div>
+
+  <!-- 자동 인사이트 -->
+  <div id="insights-row" class="insights-row" style="display:none;"></div>
+
+  <!-- 피킹 효율 -->
+  <div class="section-header">
+    <span class="section-title">피킹 효율</span>
+    <span class="section-desc">출고 작업량 ÷ 피킹 총 투입시간</span>
+  </div>
+  <div class="metrics-grid" style="margin-bottom:16px;">
+    <div class="metric-card"><p class="wh-label">1창고</p><p class="value" id="pick1">—</p><p class="sub" id="pick1s">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고 그린</p><p class="value" id="pick2g">—</p><p class="sub" id="pick2gs">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고 블루</p><p class="value" id="pick2b">—</p><p class="sub" id="pick2bs">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">3창고</p><p class="value" id="pick3">—</p><p class="sub" id="pick3s">데이터 없음</p></div>
+  </div>
+
+  <!-- 포장 효율 -->
+  <div class="section-header">
+    <span class="section-title">포장 효율</span>
+    <span class="section-desc">전체 출고 건수 ÷ 포장 알바 투입시간</span>
+  </div>
+  <div class="metrics-grid" style="margin-bottom:16px;">
+    <div class="metric-card"><p class="wh-label">1창고</p><p class="value" id="pack1">—</p><p class="sub" id="pack1s">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고 그린</p><p class="value" id="pack2g">—</p><p class="sub" id="pack2gs">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고 블루</p><p class="value" id="pack2b">—</p><p class="sub" id="pack2bs">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">3창고</p><p class="value" id="pack3">—</p><p class="sub" id="pack3s">데이터 없음</p></div>
+  </div>
+
+  <!-- 알바 의존도 -->
+  <div class="section-header">
+    <span class="section-title">알바 의존도</span>
+    <span class="section-desc">피킹 알바 ÷ (직원 + 피킹 알바) 투입시간</span>
+  </div>
+  <div class="metrics-grid" style="margin-bottom:16px;">
+    <div class="metric-card"><p class="wh-label">1창고</p><p class="value" id="dep1">—</p><p class="sub" id="dep1s">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고 그린</p><p class="value" id="dep2g">—</p><p class="sub" id="dep2gs">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고 블루</p><p class="value" id="dep2b">—</p><p class="sub" id="dep2bs">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">3창고</p><p class="value" id="dep3">—</p><p class="sub" id="dep3s">데이터 없음</p></div>
+  </div>
+
+  <!-- 합포장 현황 -->
+  <div class="section-header">
+    <span class="section-title">합포장 현황</span>
+    <span class="section-desc">합포장 비중 / 평균 묶음 크기</span>
+  </div>
+  <div class="metrics-grid" style="margin-bottom:16px;">
+    <div class="metric-card"><p class="wh-label">1창고</p><p class="value" id="bundle1">—</p><p class="sub" id="bundle1s">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고 그린</p><p class="value" id="bundle2g">—</p><p class="sub" id="bundle2gs">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고 블루</p><p class="value" id="bundle2b">—</p><p class="sub" id="bundle2bs">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">3창고</p><p class="value" id="bundle3">—</p><p class="sub" id="bundle3s">데이터 없음</p></div>
+  </div>
+
+  <!-- 그로스 작업량 -->
+  <div class="section-header">
+    <span class="section-title">그로스 작업량</span>
+    <span class="section-desc">시간당 파레트 / 파레트당 분</span>
+  </div>
+  <div class="metrics-grid" style="margin-bottom:16px;">
+    <div class="metric-card"><p class="wh-label">1창고</p><p class="value" id="gross1">—</p><p class="sub" id="gross1s">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고 그린</p><p class="value" id="gross2g">—</p><p class="sub" id="gross2gs">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고 블루</p><p class="value" id="gross2b">—</p><p class="sub" id="gross2bs">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">3창고</p><p class="value" id="gross3">—</p><p class="sub" id="gross3s">데이터 없음</p></div>
+  </div>
+
+  <!-- 반품 처리 효율 -->
+  <div class="section-header">
+    <span class="section-title">반품 처리 효율</span>
+    <span class="section-desc">3창고 반품 건수 ÷ 반품 알바 투입시간</span>
+  </div>
+  <div class="metrics-grid" style="margin-bottom:16px;">
+    <div class="metric-card"><p class="wh-label">1창고</p><p class="value" style="color:var(--ink-3);">—</p><p class="sub">해당 없음</p></div>
+    <div class="metric-card"><p class="wh-label">2창고</p><p class="value" style="color:var(--ink-3);">—</p><p class="sub">해당 없음</p></div>
+    <div class="metric-card"><p class="wh-label">3창고</p><p class="value" id="ret3">—</p><p class="sub" id="ret3s">데이터 없음</p></div>
+    <div class="metric-card" style="opacity:.3;pointer-events:none;"></div>
+  </div>
+
+  <!-- 파레트랙 -->
+  <div class="card">
+    <p class="card-title">파레트랙 공간 현황</p>
+    <div id="rack-status"><p style="font-size:13px;color:var(--ink-3);">데이터 없음</p></div>
+  </div>
+
+  <!-- 날짜별 상세 -->
+  <div class="card">
+    <p class="card-title">날짜별 상세</p>
+    <div id="daily-detail"><p style="font-size:13px;color:var(--ink-3);">날짜를 선택하고 엑셀을 업로드하면 데이터가 표시됩니다.</p></div>
+  </div>
+
+  <!-- 추이 차트 -->
+  <div class="card">
+    <p class="card-title">추이 차트</p>
+    <p class="chart-label">피킹 효율</p>
+    <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="pick-chart"></canvas></div>
+    <p class="chart-label">포장 효율</p>
+    <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="pack-chart"></canvas></div>
+    <p class="chart-label">알바 의존도</p>
+    <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="dep-chart"></canvas></div>
+    <p class="chart-label">파레트랙 사용률 (%)</p>
+    <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="rack-chart"></canvas></div>
+    <p class="chart-label">그로스 작업량 (파레트당 분)</p>
+    <div style="position:relative;height:180px;margin-bottom:8px;"><canvas id="gross-chart"></canvas></div>
+    <p class="chart-label">반품 처리 효율 — 3창고 (건/h)</p>
+    <div style="position:relative;height:180px;"><canvas id="return-chart"></canvas></div>
+  </div>
+
+  <!-- 개인별 생산성 -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <p class="card-title">개인별 생산성 (1창고)</p>
+      <button onclick="loadProductivity()" style="font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;font-family:inherit;color:var(--ink);">불러오기</button>
+    </div>
+    <div id="productivity-result"><p style="font-size:13px;color:var(--ink-3);">불러오기를 클릭하세요.</p></div>
+  </div>
+
+  <!-- 누적 데이터 -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <p class="card-title">누적 데이터</p>
+      <button class="export-btn" onclick="exportCSV()">⬇ CSV 내보내기</button>
+    </div>
+    <div id="history-list"><p style="font-size:13px;color:var(--ink-3);">저장된 데이터가 없습니다.</p></div>
+  </div>
+
+</div><!-- end view-dashboard -->
+</div><!-- end main -->
+
 <div class="toast" id="toast"></div>
 
 <script>
+const SHEETS_API_KEY = 'AIzaSyCfmn6uiBVv8GfFjRE47kw0dWipwhoenzk';
+const SHEET_ID_1 = '1nMLnF1QAvcHH_WOVpW5wH4Je6L7GytihSZ4ebMW3sro';
+const WHS = ['1창고','2창고그린','2창고블루','3창고'];
+const WH_LABELS = {'1창고':'1창고','2창고그린':'2창고 그린','2창고블루':'2창고 블루','3창고':'3창고'};
+const WH_COLORS = {'1창고':'#2563eb','2창고그린':'#16a34a','2창고블루':'#7c3aed','3창고':'#ea580c'};
+const WH_ID = {'1창고':'1','2창고그린':'2g','2창고블루':'2b','3창고':'3'};
+
 var pickChart=null,packChart=null,depChart=null,rackChart=null,grossChart=null,returnChart=null;
 var isFirebaseReady=false;
+var currentPeriod='day';
+var allOutCache=null;
 
-function waitFirebase(cb){
-  if(window.firebaseReady){cb();}
-  else{window.addEventListener('firebaseReady',cb);}
-}
+// Theme
+const savedTheme=localStorage.getItem('wh-theme');
+if(savedTheme==='dark')document.documentElement.classList.add('dark');
+document.getElementById('btn-theme').addEventListener('click',function(){
+  document.documentElement.classList.toggle('dark');
+  localStorage.setItem('wh-theme',document.documentElement.classList.contains('dark')?'dark':'light');
+  this.textContent=document.documentElement.classList.contains('dark')?'☀️':'🌙';
+});
+if(savedTheme==='dark')document.getElementById('btn-theme').textContent='☀️';
 
+// Firebase
+function waitFirebase(cb){if(window.firebaseReady){cb();}else{window.addEventListener('firebaseReady',cb);}}
 waitFirebase(function(){
   isFirebaseReady=true;
-  document.getElementById('conn-status').textContent='연결됨';
-  document.getElementById('conn-status').style.color='#1e7e34';
+  var el=document.getElementById('conn-status');
+  el.textContent='연결됨'; el.style.color='#4ade80';
   renderRecentEntries();
+});
+
+function today(){return new Date().toISOString().slice(0,10);}
+document.getElementById('m-date').value=today();
+document.getElementById('d-date').value=today();
+
+function showToast(msg){
+  var el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  setTimeout(function(){el.classList.remove('show');},2200);
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown',function(e){
+  if(e.shiftKey&&e.key==='D'){document.getElementById('btn-theme').click();}
+  if((e.ctrlKey||e.metaKey)&&e.key==='e'){e.preventDefault();exportCSV();}
 });
 
 function showTab(t){
@@ -328,26 +569,12 @@ function showTab(t){
   if(t==='dashboard')refreshDashboard();
 }
 
-function today(){return new Date().toISOString().slice(0,10);}
-document.getElementById('m-date').value=today();
-document.getElementById('d-date').value=today();
-
-function showToast(msg){
-  var el=document.getElementById('toast');
-  el.textContent=msg;el.style.display='block';
-  setTimeout(function(){el.style.display='none';},2000);
-}
-
 function updateWhView(){
   var wh=document.getElementById('m-wh').value;
-  var showHaul=wh==='2창고블루'||wh==='3창고';
-  var showContainer=wh==='2창고블루'||wh==='3창고';
-  var showRack=wh==='1창고'||wh==='2창고블루'||wh==='3창고';
-  var show3=wh==='3창고';
-  document.getElementById('m-haul-section').style.display=showHaul?'block':'none';
-  document.getElementById('m-container-section').style.display=showContainer?'block':'none';
-  document.getElementById('m-rack-section').style.display=showRack?'block':'none';
-  document.getElementById('m-return-section').style.display=show3?'block':'none';
+  document.getElementById('m-haul-section').style.display=(wh==='2창고블루'||wh==='3창고')?'block':'none';
+  document.getElementById('m-container-section').style.display=(wh==='2창고블루'||wh==='3창고')?'block':'none';
+  document.getElementById('m-rack-section').style.display=(wh==='1창고'||wh==='2창고블루'||wh==='3창고')?'block':'none';
+  document.getElementById('m-return-section').style.display=(wh==='3창고')?'block':'none';
 }
 
 function updateRackPreview(){
@@ -357,7 +584,7 @@ function updateRackPreview(){
     var pct=Math.round((total-remain)/total*100);
     document.getElementById('m-rack-pct').textContent=pct+'%';
     document.getElementById('m-rack-bar').style.width=pct+'%';
-    document.getElementById('m-rack-bar').style.background=pct>=90?'#e53935':pct>=70?'#f9a825':'#378ADD';
+    document.getElementById('m-rack-bar').style.background=pct>=90?'var(--neg)':pct>=70?'var(--warn)':'var(--blue)';
   }else{
     document.getElementById('m-rack-pct').textContent='—';
     document.getElementById('m-rack-bar').style.width='0%';
@@ -365,29 +592,25 @@ function updateRackPreview(){
 }
 
 async function saveManagerData(){
-  if(!isFirebaseReady){showToast('Firebase 연결 중입니다. 잠시 후 다시 시도해주세요.');return;}
+  if(!isFirebaseReady){showToast('Firebase 연결 중...');return;}
   var wh=document.getElementById('m-wh').value;
   var date=document.getElementById('m-date').value;
   if(!wh||!date){showToast('창고와 날짜를 선택해주세요.');return;}
-  var is1=wh==='1창고';
   var isGreen=wh==='2창고그린';
-  var isBlue=wh==='2창고블루';
   var staffCnt=parseInt(document.getElementById('m-staff').value)||0;
   var data={
-    wh,date,
-    staff:staffCnt,
-    staffHours:staffCnt*8,
+    wh,date,staff:staffCnt,staffHours:staffCnt*8,
     pickStaff:parseInt(document.getElementById('m-pick-staff').value)||0,
     pickHours:parseFloat(document.getElementById('m-pick-hours').value)||0,
     packStaff:parseInt(document.getElementById('m-pack-staff').value)||0,
     packHours:parseFloat(document.getElementById('m-pack-hours').value)||0,
     grossStaff:parseInt(document.getElementById('m-gross-staff').value)||0,
     grossHours:parseFloat(document.getElementById('m-gross-hours').value)||0,
-    haulStaff:(is1||isGreen)?0:(parseInt(document.getElementById('m-haul-staff').value)||0),
-    haulHours:(is1||isGreen)?0:(parseFloat(document.getElementById('m-haul-hours').value)||0),
+    haulStaff:isGreen?0:(parseInt(document.getElementById('m-haul-staff').value)||0),
+    haulHours:isGreen?0:(parseFloat(document.getElementById('m-haul-hours').value)||0),
     pallet:parseInt(document.getElementById('m-pallet').value)||0,
     box:parseInt(document.getElementById('m-box').value)||0,
-    container:(is1||isGreen)?0:(parseInt(document.getElementById('m-container').value)||0),
+    container:isGreen?0:(parseInt(document.getElementById('m-container').value)||0),
     returnCount:wh==='3창고'?(parseInt(document.getElementById('m-return-count').value)||0):0,
     returnStaff:wh==='3창고'?(parseInt(document.getElementById('m-return-staff').value)||0):0,
     returnHours:wh==='3창고'?(parseFloat(document.getElementById('m-return-hours').value)||0):0,
@@ -397,7 +620,9 @@ async function saveManagerData(){
     ts:Date.now()
   };
   try{
-    var whKey=wh.replace(/[^a-zA-Z0-9가-힣]/g,'');await window.dbSet('mgr/'+date.replace(/-/g,'')+'_'+whKey,data);
+    var whKey=wh.replace(/[^a-zA-Z0-9가-힣]/g,'');
+    await window.dbSet('mgr/'+date.replace(/-/g,'')+'_'+whKey,data);
+    allOutCache=null;
     showToast('저장됐어요!');
     renderRecentEntries();
     document.getElementById('m-note').value='';
@@ -408,7 +633,7 @@ async function renderRecentEntries(){
   if(!isFirebaseReady)return;
   try{
     var all=await window.dbGet('mgr');
-    if(!all){document.getElementById('recent-list').innerHTML='<p style="font-size:13px;color:#888;">아직 입력된 데이터가 없습니다.</p>';return;}
+    if(!all){document.getElementById('recent-list').innerHTML='<p style="font-size:13px;color:var(--ink-3);">아직 입력된 데이터가 없습니다.</p>';return;}
     var entries=Object.values(all).sort(function(a,b){return b.ts-a.ts;}).slice(0,10);
     var html='';
     entries.forEach(function(d){
@@ -418,13 +643,14 @@ async function renderRecentEntries(){
       if(d.grossHours)parts.push('그로스 '+d.grossHours+'h');
       if(d.haulHours)parts.push('하역 '+d.haulHours+'h');
       if(d.rackTotal>0)parts.push('랙 '+Math.round((d.rackTotal-d.rackRemain)/d.rackTotal*100)+'%');
-      html+='<div class="row-item"><span style="color:#888;">'+d.date+' '+d.wh+'</span>';
-      html+='<span style="font-size:12px;">직원 '+d.staff+'명'+(parts.length?' / '+parts.join(' / '):'')+'</span></div>';
+      html+='<div class="row-item"><span style="color:var(--ink-2);">'+d.date+' <strong>'+d.wh+'</strong></span>';
+      html+='<span style="font-size:12px;color:var(--ink-2);">직원 '+d.staff+'명'+(parts.length?' · '+parts.join(' · '):'')+'</span></div>';
     });
     document.getElementById('recent-list').innerHTML=html;
-  }catch(e){document.getElementById('recent-list').innerHTML='<p style="font-size:13px;color:#888;">데이터를 불러오지 못했습니다.</p>';}
+  }catch(e){}
 }
 
+// Outbound calculation
 function catFromAbbrev(v){
   if(!v||String(v).trim()===''||String(v).toUpperCase().trim()==='NAN')return '공란';
   var s=String(v).toUpperCase().trim();
@@ -436,13 +662,10 @@ function catFromAbbrev(v){
   if(s.indexOf('3PR')>=0)return '3PR';
   return '기타';
 }
-function whGroup(b, cat){
+function whGroup(b,cat){
   if(['1창고','도착보장1','1HB','1PR'].indexOf(b)>=0)return '1창고';
   if(b==='2창고')return '2창고그린';
-  if(b==='도착보장2'){
-    if(cat==='2창고')return '2창고그린';
-    return '2창고블루';
-  }
+  if(b==='도착보장2')return cat==='2창고'?'2창고그린':'2창고블루';
   if(['신창고','신HB','2PR'].indexOf(b)>=0)return '2창고블루';
   if(['3창고','도착보장3','3HB','3PR'].indexOf(b)>=0)return '3창고';
   return b;
@@ -479,7 +702,7 @@ function calcOutbound(rows){
   });
   var wg=buckets.map(function(b,i){return whGroup(b,cats[i]);});
   var stats={};
-  ['1창고','2창고그린','2창고블루','3창고'].forEach(function(wh){
+  WHS.forEach(function(wh){
     var pc={};
     rows.forEach(function(_,i){if(wg[i]===wh){var k=phoneKeys[i];pc[k]=(pc[k]||0)+1;}});
     var score=0,single=0,multi=0,total=0;
@@ -500,8 +723,8 @@ async function handleExcel(input){
       var ws=wb.Sheets[wb.SheetNames[0]];
       var data=XLSX.utils.sheet_to_json(ws,{defval:''});
       var stats=calcOutbound(data);
-      var out={date,stats,total:data.length};
-      await window.dbSet('out/'+date.replace(/-/g,''),out);
+      await window.dbSet('out/'+date.replace(/-/g,''),{date,stats,total:data.length});
+      allOutCache=null;
       showToast('엑셀 집계 완료!');refreshDashboard();
     }catch(e){showToast('파일 읽기 오류: '+e.message);}
   };
@@ -509,10 +732,7 @@ async function handleExcel(input){
 }
 
 async function getMgr(date,wh){
-  try{
-    var whKey=wh.replace(/[^a-zA-Z0-9가-힣]/g,'');
-    return await window.dbGet('mgr/'+date.replace(/-/g,'')+'_'+whKey);
-  }catch(e){}return null;
+  try{var whKey=wh.replace(/[^a-zA-Z0-9가-힣]/g,'');return await window.dbGet('mgr/'+date.replace(/-/g,'')+'_'+whKey);}catch(e){}return null;
 }
 async function getOut(date){
   try{return await window.dbGet('out/'+date.replace(/-/g,''));}catch(e){}return null;
@@ -520,13 +740,9 @@ async function getOut(date){
 
 function calcMetrics(out,mgr,wh){
   if(!mgr)return null;
-  var staffH=mgr.staffHours||0;
-  var pickH=mgr.pickHours||0;
-  var packH=mgr.packHours||0;
-  var grossH=mgr.grossHours||0;
-  var pallet=mgr.pallet||0;
-  var totalPickH=staffH+pickH;
-  var totalOutH=totalPickH+packH;
+  var staffH=mgr.staffHours||0,pickH=mgr.pickHours||0,packH=mgr.packHours||0;
+  var grossH=mgr.grossHours||0,pallet=mgr.pallet||0;
+  var totalPickH=staffH+pickH,totalOutH=totalPickH+packH;
   var score=out&&out.stats&&out.stats[wh]?out.stats[wh].score:null;
   var outTotal=out&&out.stats&&out.stats[wh]?out.stats[wh].total:null;
   var single=out&&out.stats&&out.stats[wh]?out.stats[wh].single:null;
@@ -538,22 +754,74 @@ function calcMetrics(out,mgr,wh){
   var avgBundle=multi&&multi>0?Math.round(((score||0)-(single||0))/multi*10)/10:null;
   var grossPerH=pallet>0&&grossH>0?Math.round(pallet/grossH*10)/10:null;
   var minPerPallet=pallet>0&&grossH>0?Math.round(grossH*60/pallet):null;
-  var returnCount=mgr.returnCount||0;
-  var returnH=mgr.returnHours||0;
+  var returnCount=mgr.returnCount||0,returnH=mgr.returnHours||0;
   var returnEff=returnCount>0&&returnH>0?Math.round(returnCount/returnH*10)/10:null;
   return{pickEff,packEff,dep,score,outTotal,single,multi,staffH,pickH,packH,grossH,pallet,totalPickH,totalOutH,bundleRatio,avgBundle,grossPerH,minPerPallet,returnCount,returnH,returnEff};
+}
+
+// Period filter
+function setPeriod(period, btn){
+  currentPeriod=period;
+  document.querySelectorAll('.period-chip').forEach(function(b){b.classList.remove('on');});
+  btn.classList.add('on');
+  refreshDashboard();
+}
+
+// Auto insights
+function buildInsights(mgrData, out){
+  var insights=[];
+  var pickEffs=[];
+  WHS.forEach(function(wh){
+    var m=calcMetrics(out,mgrData[wh],wh);
+    if(m&&m.pickEff!==null)pickEffs.push({wh,eff:m.pickEff,dep:m.dep});
+  });
+  if(pickEffs.length>=2){
+    pickEffs.sort(function(a,b){return b.eff-a.eff;});
+    var best=pickEffs[0],worst=pickEffs[pickEffs.length-1];
+    insights.push({cls:'pos',label:'피킹 효율 최고',value:WH_LABELS[best.wh]+' '+best.eff+'/h',sub:'오늘 가장 높은 피킹 효율'});
+    if(worst.eff<best.eff*0.7){
+      insights.push({cls:'warn',label:'효율 격차 주의',value:WH_LABELS[worst.wh]+' '+worst.eff+'/h',sub:'최고 대비 '+Math.round((1-worst.eff/best.eff)*100)+'% 낮음'});
+    }
+  }
+  // 파레트랙 경고
+  WHS.forEach(function(wh){
+    var mgr=mgrData[wh];
+    if(mgr&&mgr.rackTotal>0){
+      var pct=Math.round((mgr.rackTotal-mgr.rackRemain)/mgr.rackTotal*100);
+      if(pct>=90)insights.push({cls:'neg',label:'공간 부족 경고',value:WH_LABELS[wh]+' '+pct+'%',sub:'파레트랙이 거의 가득 찼습니다'});
+      else if(pct>=75)insights.push({cls:'warn',label:'공간 주의',value:WH_LABELS[wh]+' '+pct+'%',sub:'파레트랙 여유가 줄고 있습니다'});
+    }
+  });
+  // 알바 의존도 높음
+  WHS.forEach(function(wh){
+    var m=calcMetrics(out,mgrData[wh],wh);
+    if(m&&m.dep!==null&&m.dep>=70){
+      insights.push({cls:'warn',label:'알바 의존도 높음',value:WH_LABELS[wh]+' '+m.dep+'%',sub:'정규 인력 충원 검토 필요'});
+    }
+  });
+  return insights.slice(0,3);
 }
 
 async function refreshDashboard(){
   if(!isFirebaseReady)return;
   var date=document.getElementById('d-date').value;if(!date)return;
   var out=await getOut(date);
-  var mgrData={};var whs=['1창고','2창고그린','2창고블루','3창고'];
-  for(var i=0;i<whs.length;i++){var m=await getMgr(date,whs[i]);if(m)mgrData[whs[i]]=m;}
+  var mgrData={};
+  for(var i=0;i<WHS.length;i++){var m=await getMgr(date,WHS[i]);if(m)mgrData[WHS[i]]=m;}
 
-  var whIdMap={'1창고':'1','2창고그린':'2g','2창고블루':'2b','3창고':'3'};
-  whs.forEach(function(wh){
-    var id=whIdMap[wh];
+  // Insights
+  var insights=buildInsights(mgrData,out);
+  var insRow=document.getElementById('insights-row');
+  if(insights.length>0){
+    insRow.style.display='grid';
+    insRow.innerHTML=insights.map(function(ins){
+      return '<div class="insight '+ins.cls+'"><p class="i-label">'+ins.label+'</p><p class="i-value">'+ins.value+'</p><p class="i-sub">'+ins.sub+'</p></div>';
+    }).join('');
+  }else{insRow.style.display='none';}
+
+  // Metrics
+  WHS.forEach(function(wh){
+    var id=WH_ID[wh];
     var m=calcMetrics(out,mgrData[wh],wh);
     var pe=document.getElementById('pick'+id),pes=document.getElementById('pick'+id+'s');
     var pa=document.getElementById('pack'+id),pas=document.getElementById('pack'+id+'s');
@@ -565,96 +833,82 @@ async function refreshDashboard(){
       pas.textContent=m.outTotal!==null?'출고 '+m.outTotal+'건 / 포장 '+m.packH+'h':m.packH>0?'엑셀 미업로드':'포장알바 미입력';
       de.textContent=m.dep!==null?m.dep+'%':'—';
       des.textContent='직원 '+m.staffH+'h / 피킹알바 '+m.pickH+'h';
-    }else if(pe){
-      pe.textContent='—';pes.textContent='데이터 없음';
-      pa.textContent='—';pas.textContent='데이터 없음';
-      de.textContent='—';des.textContent='데이터 없음';
-    }
+    }else if(pe){pe.textContent='—';pes.textContent='데이터 없음';pa.textContent='—';pas.textContent='데이터 없음';de.textContent='—';des.textContent='데이터 없음';}
   });
 
-  var rackHtml='';var hasRack=false;
-  whs.forEach(function(wh){
-    var mgr=mgrData[wh];
-    if(mgr&&mgr.rackTotal>0){
-      hasRack=true;
-      var pct=Math.round((mgr.rackTotal-mgr.rackRemain)/mgr.rackTotal*100);
-      var barColor=pct>=90?'#e53935':pct>=70?'#f9a825':'#378ADD';
-      var badgeCls=pct>=90?'badge-danger':pct>=70?'badge-warn':'badge-ok';
-      var badgeTxt=pct>=90?'여유 부족':pct>=70?'주의':'여유 있음';
-      rackHtml+='<div style="margin-bottom:14px;">';
-      rackHtml+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
-      rackHtml+='<span style="font-size:13px;font-weight:600;">'+wh+'</span>';
-      rackHtml+='<span style="display:flex;align-items:center;gap:8px;font-size:13px;color:#888;">잔여 '+mgr.rackRemain+' / '+mgr.rackTotal+' <span class="badge '+badgeCls+'">'+badgeTxt+'</span></span></div>';
-      rackHtml+='<div class="rack-bar-wrap"><div style="height:100%;border-radius:4px;background:'+barColor+';width:'+pct+'%;"></div></div></div>';
-    }
-  });
-  whs.forEach(function(wh){
-    var id=whIdMap[wh];
+  WHS.forEach(function(wh){
+    var id=WH_ID[wh];
     var m=calcMetrics(out,mgrData[wh],wh);
     var be=document.getElementById('bundle'+id),bes=document.getElementById('bundle'+id+'s');
     var ge=document.getElementById('gross'+id),ges=document.getElementById('gross'+id+'s');
     if(m){
-      be.textContent=m.bundleRatio!==null?m.bundleRatio+'%':'—';
-      bes.textContent=m.avgBundle!==null?'평균 '+m.avgBundle+'개/묶음':'엑셀 미업로드';
-      ge.textContent=m.grossPerH!==null?m.grossPerH+'파레트/h':'—';
-      ges.textContent=m.minPerPallet!==null?'파레트당 '+m.minPerPallet+'분':m.pallet>0?'그로스알바 미입력':'그로스 없음';
-    }else{
-      be.textContent='—';bes.textContent='데이터 없음';
-      ge.textContent='—';ges.textContent='데이터 없음';
+      if(be){be.textContent=m.bundleRatio!==null?m.bundleRatio+'%':'—';bes.textContent=m.avgBundle!==null?'평균 '+m.avgBundle+'개/묶음':'엑셀 미업로드';}
+      if(ge){ge.textContent=m.grossPerH!==null?m.grossPerH+'파레트/h':'—';ges.textContent=m.minPerPallet!==null?'파레트당 '+m.minPerPallet+'분':m.pallet>0?'그로스알바 미입력':'그로스 없음';}
     }
   });
-  var m3=calcMetrics(out,mgrData['3창고'],'3창고');
-  var ret3El=document.getElementById('ret3'),ret3sEl=document.getElementById('ret3s');
-  if(m3&&m3.returnEff!==null){
-    ret3El.textContent=m3.returnEff+'/h';
-    ret3sEl.textContent='반품 '+m3.returnCount+'건 / '+m3.returnH+'h';
-  }else if(m3&&m3.returnCount>0){
-    ret3El.textContent=m3.returnCount+'건';
-    ret3sEl.textContent='반품알바 미입력';
-  }else{
-    ret3El.textContent='—';ret3sEl.textContent=m3?'반품 없음':'데이터 없음';
-  }
-  document.getElementById('rack-status').innerHTML=hasRack?rackHtml:'<p style="font-size:13px;color:#888;">파레트랙 데이터가 없습니다.</p>';
 
-  var detailHtml='';
+  var m3=calcMetrics(out,mgrData['3창고'],'3창고');
+  var r3=document.getElementById('ret3'),r3s=document.getElementById('ret3s');
+  if(m3&&m3.returnEff!==null){r3.textContent=m3.returnEff+'/h';r3s.textContent='반품 '+m3.returnCount+'건 / '+m3.returnH+'h';}
+  else if(m3&&m3.returnCount>0){r3.textContent=m3.returnCount+'건';r3s.textContent='반품알바 미입력';}
+  else{r3.textContent='—';r3s.textContent=m3?'반품 없음':'데이터 없음';}
+
+  // Rack
+  var rackHtml='';var hasRack=false;
+  WHS.forEach(function(wh){
+    var mgr=mgrData[wh];
+    if(mgr&&mgr.rackTotal>0){
+      hasRack=true;
+      var pct=Math.round((mgr.rackTotal-mgr.rackRemain)/mgr.rackTotal*100);
+      var barColor=pct>=90?'var(--neg)':pct>=70?'var(--warn)':'var(--blue)';
+      var badgeCls=pct>=90?'badge-danger':pct>=70?'badge-warn':'badge-ok';
+      var badgeTxt=pct>=90?'여유 부족':pct>=70?'주의':'여유 있음';
+      rackHtml+='<div style="margin-bottom:14px;">';
+      rackHtml+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+      rackHtml+='<span style="font-size:13px;font-weight:600;">'+WH_LABELS[wh]+'</span>';
+      rackHtml+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2);">잔여 '+mgr.rackRemain+' / '+mgr.rackTotal+' <span class="badge '+badgeCls+'">'+badgeTxt+'</span></span></div>';
+      rackHtml+='<div class="rack-bar-wrap"><div style="height:100%;border-radius:4px;background:'+barColor+';width:'+pct+'%;transition:width .4s;"></div></div></div>';
+    }
+  });
+  document.getElementById('rack-status').innerHTML=hasRack?rackHtml:'<p style="font-size:13px;color:var(--ink-3);">파레트랙 데이터가 없습니다.</p>';
+
+  // Detail table
   if(out||Object.keys(mgrData).length>0){
-    detailHtml='<table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">';
-    detailHtml+='<tr><td style="color:#888;padding:4px 0;width:28%;">항목</td>';
-    var whLabels={'1창고':'1창고','2창고그린':'2창고 그린','2창고블루':'2창고 블루','3창고':'3창고'};
-    whs.forEach(function(wh){detailHtml+='<td style="color:#888;padding:4px 0;text-align:center;font-size:12px;">'+whLabels[wh]+'</td>';});
-    detailHtml+='</tr>';
+    var html='<div style="overflow-x:auto;"><table class="data-table">';
+    html+='<thead><tr><th>항목</th>';
+    WHS.forEach(function(wh){html+='<th class="num">'+WH_LABELS[wh]+'</th>';});
+    html+='</tr></thead><tbody>';
     var rows2=[
       {label:'출고 작업량',fn:function(wh){return out&&out.stats&&out.stats[wh]?out.stats[wh].score:'—';}},
-      {label:'전체 출고 건수',fn:function(wh){return out&&out.stats&&out.stats[wh]?out.stats[wh].total+'건':'—';}},
+      {label:'출고 건수',fn:function(wh){return out&&out.stats&&out.stats[wh]?out.stats[wh].total+'건':'—';}},
       {label:'단건 / 합포장',fn:function(wh){return out&&out.stats&&out.stats[wh]?out.stats[wh].single+'건 / '+out.stats[wh].multi+'묶음':'—';}},
       {label:'직원',fn:function(wh){var m=mgrData[wh];return m?m.staff+'명 ('+m.staffHours+'h)':'—';}},
       {label:'피킹 알바',fn:function(wh){var m=mgrData[wh];return m?m.pickStaff+'명 / '+m.pickHours+'h':'—';}},
       {label:'포장 알바',fn:function(wh){var m=mgrData[wh];return m?m.packStaff+'명 / '+m.packHours+'h':'—';}},
       {label:'그로스 알바',fn:function(wh){var m=mgrData[wh];return m&&m.grossHours?m.grossStaff+'명 / '+m.grossHours+'h':'—';}},
       {label:'하역 알바',fn:function(wh){var m=mgrData[wh];return m&&m.haulHours?m.haulStaff+'명 / '+m.haulHours+'h':'—';}},
-      {label:'그로스 작업 파레트',fn:function(wh){return mgrData[wh]?mgrData[wh].pallet+'개':'—';}},
+      {label:'그로스 파레트',fn:function(wh){return mgrData[wh]?mgrData[wh].pallet+'개':'—';}},
       {label:'컨테이너',fn:function(wh){var m=mgrData[wh];return m&&m.container?m.container+'개':'—';}},
       {label:'파레트랙 사용률',fn:function(wh){var m=mgrData[wh];if(!m||!m.rackTotal)return '—';return Math.round((m.rackTotal-m.rackRemain)/m.rackTotal*100)+'% (잔여 '+m.rackRemain+')';}},
       {label:'피킹 효율',bold:true,fn:function(wh){var m=calcMetrics(out,mgrData[wh],wh);return m&&m.pickEff!==null?m.pickEff+'/h':'—';}},
       {label:'포장 효율',bold:true,fn:function(wh){var m=calcMetrics(out,mgrData[wh],wh);return m&&m.packEff!==null?m.packEff+'/h':'—';}},
       {label:'알바 의존도',bold:true,fn:function(wh){var m=calcMetrics(out,mgrData[wh],wh);return m&&m.dep!==null?m.dep+'%':'—';}},
-      {label:'반품 처리 건수',fn:function(wh){var m=mgrData[wh];return m&&m.returnCount?m.returnCount+'건':'—';}},
-      {label:'반품 알바',fn:function(wh){var m=mgrData[wh];return m&&m.returnHours?m.returnStaff+'명 / '+m.returnHours+'h':'—';}},
+      {label:'반품 건수',fn:function(wh){var m=mgrData[wh];return m&&m.returnCount?m.returnCount+'건':'—';}},
       {label:'반품 처리 효율',bold:true,fn:function(wh){var m=calcMetrics(out,mgrData[wh],wh);return m&&m.returnEff!==null?m.returnEff+'/h':'—';}},
     ];
     rows2.forEach(function(row){
-      detailHtml+='<tr style="border-top:1px solid #f0f0f0;">';
-      detailHtml+='<td style="padding:6px 0;color:#888;">'+row.label+'</td>';
-      whs.forEach(function(wh){
-        detailHtml+='<td style="padding:6px 0;text-align:center;font-weight:'+(row.bold?'600':'400')+';">'+row.fn(wh)+'</td>';
+      html+='<tr><td>'+row.label+'</td>';
+      WHS.forEach(function(wh){
+        html+='<td class="num" style="font-weight:'+(row.bold?'600':'400')+';">'+row.fn(wh)+'</td>';
       });
-      detailHtml+='</tr>';
+      html+='</tr>';
     });
-    detailHtml+='</table>';
+    html+='</tbody></table></div>';
+    document.getElementById('daily-detail').innerHTML=html;
   }else{
-    detailHtml='<p style="font-size:13px;color:#888;">선택한 날짜의 데이터가 없습니다.</p>';
+    document.getElementById('daily-detail').innerHTML='<p style="font-size:13px;color:var(--ink-3);">선택한 날짜의 데이터가 없습니다.</p>';
   }
-  document.getElementById('daily-detail').innerHTML=detailHtml;
+
   await renderHistory();
   await renderTrendCharts();
 }
@@ -662,25 +916,23 @@ async function refreshDashboard(){
 async function renderHistory(){
   try{
     var allOut=await window.dbGet('out');
-    if(!allOut){document.getElementById('history-list').innerHTML='<p style="font-size:13px;color:#888;">저장된 데이터가 없습니다.</p>';return;}
-    var entries=Object.values(allOut).sort(function(a,b){return b.date>a.date?-1:1;}).slice(0,14);
-    var html='<table style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;">';
-    html+='<tr><td style="color:#888;padding:3px 0;width:18%;">날짜</td>';
-    ['1창고','2창고그린','2창고블루','3창고'].forEach(function(wh){html+='<td style="color:#888;padding:3px 0;text-align:center;">'+wh+'</td>';});
-    html+='</tr>';
+    if(!allOut){document.getElementById('history-list').innerHTML='<p style="font-size:13px;color:var(--ink-3);">저장된 데이터가 없습니다.</p>';return;}
+    var entries=Object.values(allOut).sort(function(a,b){return b.date>a.date?-1:1;}).slice(0,30);
+    var html='<div style="overflow-x:auto;"><table class="data-table"><thead><tr><th>날짜</th>';
+    WHS.forEach(function(wh){html+='<th class="num">'+WH_LABELS[wh]+'</th>';});
+    html+='</tr></thead><tbody>';
     for(var i=0;i<entries.length;i++){
       var d=entries[i];
-      html+='<tr style="border-top:1px solid #f0f0f0;">';
-      html+='<td style="padding:5px 0;color:#888;">'+d.date+'</td>';
-      for(var j=0;j<3;j++){
-        var wh=['1창고','2창고그린','2창고블루','3창고'][j];
+      html+='<tr><td>'+d.date+'</td>';
+      for(var j=0;j<WHS.length;j++){
+        var wh=WHS[j];
         var mgr=await getMgr(d.date,wh);
         var m=calcMetrics(d,mgr,wh);
-        html+='<td style="padding:5px 0;text-align:center;">'+(m&&m.pickEff!==null?m.pickEff+'/h':'—')+'</td>';
+        html+='<td class="num">'+(m&&m.pickEff!==null?m.pickEff+'/h':'—')+'</td>';
       }
       html+='</tr>';
     }
-    html+='</table>';
+    html+='</tbody></table></div>';
     document.getElementById('history-list').innerHTML=html;
   }catch(e){}
 }
@@ -692,13 +944,11 @@ async function renderTrendCharts(){
     var entries=Object.values(allOut).sort(function(a,b){return a.date>b.date?1:-1;}).slice(-14);
     if(entries.length<2)return;
     var labels=[],p1=[],p2g=[],p2b=[],p3=[],pa1=[],pa2g=[],pa2b=[],pa3=[],d1=[],d2g=[],d2b=[],d3=[];
+    var rack1=[],rack2b=[],rack3=[],gph1=[],gph2g=[],gph2b=[],gph3=[],ret3=[];
     for(var i=0;i<entries.length;i++){
       var d=entries[i];
       var mgrs={};
-      for(var j=0;j<3;j++){
-        var wh=['1창고','2창고그린','2창고블루','3창고'][j];
-        mgrs[wh]=await getMgr(d.date,wh);
-      }
+      for(var j=0;j<WHS.length;j++){mgrs[WHS[j]]=await getMgr(d.date,WHS[j]);}
       labels.push(d.date.slice(5));
       var m1=calcMetrics(d,mgrs['1창고'],'1창고');
       var m2g=calcMetrics(d,mgrs['2창고그린'],'2창고그린');
@@ -707,103 +957,111 @@ async function renderTrendCharts(){
       p1.push(m1?m1.pickEff:null);p2g.push(m2g?m2g.pickEff:null);p2b.push(m2b?m2b.pickEff:null);p3.push(m3?m3.pickEff:null);
       pa1.push(m1?m1.packEff:null);pa2g.push(m2g?m2g.packEff:null);pa2b.push(m2b?m2b.packEff:null);pa3.push(m3?m3.packEff:null);
       d1.push(m1?m1.dep:null);d2g.push(m2g?m2g.dep:null);d2b.push(m2b?m2b.dep:null);d3.push(m3?m3.dep:null);
+      var r1=mgrs['1창고'],r2b=mgrs['2창고블루'],r3=mgrs['3창고'];
+      rack1.push(r1&&r1.rackTotal>0?Math.round((r1.rackTotal-r1.rackRemain)/r1.rackTotal*100):null);
+      rack2b.push(r2b&&r2b.rackTotal>0?Math.round((r2b.rackTotal-r2b.rackRemain)/r2b.rackTotal*100):null);
+      rack3.push(r3&&r3.rackTotal>0?Math.round((r3.rackTotal-r3.rackRemain)/r3.rackTotal*100):null);
+      gph1.push(m1?m1.minPerPallet:null);gph2g.push(m2g?m2g.minPerPallet:null);gph2b.push(m2b?m2b.minPerPallet:null);gph3.push(m3?m3.minPerPallet:null);
+      ret3.push(m3?m3.returnEff:null);
     }
     var ds=function(label,data,color){return{label,data,borderColor:color,backgroundColor:color,pointRadius:3,tension:0.3,borderWidth:2,spanGaps:true};};
     var baseOpts={responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:true,labels:{font:{size:11},boxWidth:10,padding:10}}},
-      scales:{y:{beginAtZero:false,ticks:{font:{size:11}},grid:{color:'rgba(0,0,0,0.05)'}},
-              x:{ticks:{font:{size:10},maxRotation:0},grid:{display:false}}}};
-    if(pickChart)pickChart.destroy();
-    pickChart=new Chart(document.getElementById('pick-chart'),{type:'line',
-      data:{labels,datasets:[ds('1창고',p1,'#378ADD'),ds('2창고그린',p2g,'#1D9E75'),ds('2창고블루',p2b,'#9B59B6'),ds('3창고',p3,'#D85A30')]},options:baseOpts});
-    if(packChart)packChart.destroy();
-    packChart=new Chart(document.getElementById('pack-chart'),{type:'line',
-      data:{labels,datasets:[ds('1창고',pa1,'#378ADD'),ds('2창고그린',pa2g,'#1D9E75'),ds('2창고블루',pa2b,'#9B59B6'),ds('3창고',pa3,'#D85A30')]},options:baseOpts});
-    if(depChart)depChart.destroy();
-    depChart=new Chart(document.getElementById('dep-chart'),{type:'line',
-      data:{labels,datasets:[ds('1창고',d1,'#378ADD'),ds('2창고그린',d2g,'#1D9E75'),ds('2창고블루',d2b,'#9B59B6'),ds('3창고',d3,'#D85A30')]},
-      options:{...baseOpts,scales:{...baseOpts.scales,y:{min:0,max:100,ticks:{callback:function(v){return v+'%'},font:{size:11}},grid:{color:'rgba(0,0,0,0.05)'}}}}});
+      plugins:{legend:{display:true,labels:{font:{size:10},boxWidth:8,padding:10,color:'#888'}}},
+      scales:{y:{beginAtZero:false,ticks:{font:{size:10},color:'#888'},grid:{color:'rgba(128,128,128,0.08)'}},
+              x:{ticks:{font:{size:10},color:'#888',maxRotation:0},grid:{display:false}}}};
+    var pctOpts=JSON.parse(JSON.stringify(baseOpts));
+    pctOpts.scales.y.min=0;pctOpts.scales.y.max=100;
+    pctOpts.scales.y.ticks.callback=function(v){return v+'%';};
 
-    var rack1=[],rack2=[],rack3=[],gph1=[],gph2=[],gph3=[],ret3=[];
-    for(var i=0;i<entries.length;i++){
-      var d=entries[i];
-      var mgrs2={};
-      for(var j=0;j<3;j++){
-        var wh2=['1창고','2창고그린','2창고블루','3창고'][j];
-        mgrs2[wh2]=await getMgr(d.date,wh2);
-      }
-      var r1=mgrs2['1창고'],r2=mgrs2['2창고'],r3=mgrs2['3창고'];
-      rack1.push(r1&&r1.rackTotal>0?Math.round((r1.rackTotal-r1.rackRemain)/r1.rackTotal*100):null);
-      rack2.push(r2&&r2.rackTotal>0?Math.round((r2.rackTotal-r2.rackRemain)/r2.rackTotal*100):null);
-      rack3.push(r3&&r3.rackTotal>0?Math.round((r3.rackTotal-r3.rackRemain)/r3.rackTotal*100):null);
-      var m1g=calcMetrics(d,r1,'1창고'),m2g=calcMetrics(d,r2,'2창고'),m3g=calcMetrics(d,r3,'3창고');
-      gph1.push(m1g?m1g.minPerPallet:null);
-      gph2.push(m2g?m2g.minPerPallet:null);
-      gph3.push(m3g?m3g.minPerPallet:null);
-      ret3.push(m3g?m3g.returnEff:null);
-    }
-    var pctOpts={...baseOpts,scales:{...baseOpts.scales,y:{min:0,max:100,ticks:{callback:function(v){return v+'%'},font:{size:11}},grid:{color:'rgba(0,0,0,0.05)'}}}};
-    if(rackChart)rackChart.destroy();
-    rackChart=new Chart(document.getElementById('rack-chart'),{type:'line',
-      data:{labels,datasets:[ds('1창고',rack1,'#378ADD'),ds('2창고',rack2,'#1D9E75'),ds('3창고',rack3,'#D85A30')]},options:pctOpts});
-    if(grossChart)grossChart.destroy();
-    grossChart=new Chart(document.getElementById('gross-chart'),{type:'line',
-      data:{labels,datasets:[ds('1창고',gph1,'#378ADD'),ds('2창고',gph2,'#1D9E75'),ds('3창고',gph3,'#D85A30')]},options:baseOpts});
-    if(returnChart)returnChart.destroy();
-    returnChart=new Chart(document.getElementById('return-chart'),{type:'line',
-      data:{labels,datasets:[ds('3창고',ret3,'#D85A30')]},options:baseOpts});
+    var charts=[
+      {id:'pick-chart',data:[ds('1창고',p1,'#2563eb'),ds('2창고그린',p2g,'#16a34a'),ds('2창고블루',p2b,'#7c3aed'),ds('3창고',p3,'#ea580c')],opts:baseOpts,ref:'pickChart'},
+      {id:'pack-chart',data:[ds('1창고',pa1,'#2563eb'),ds('2창고그린',pa2g,'#16a34a'),ds('2창고블루',pa2b,'#7c3aed'),ds('3창고',pa3,'#ea580c')],opts:baseOpts,ref:'packChart'},
+      {id:'dep-chart',data:[ds('1창고',d1,'#2563eb'),ds('2창고그린',d2g,'#16a34a'),ds('2창고블루',d2b,'#7c3aed'),ds('3창고',d3,'#ea580c')],opts:pctOpts,ref:'depChart'},
+      {id:'rack-chart',data:[ds('1창고',rack1,'#2563eb'),ds('2창고블루',rack2b,'#7c3aed'),ds('3창고',rack3,'#ea580c')],opts:pctOpts,ref:'rackChart'},
+      {id:'gross-chart',data:[ds('1창고',gph1,'#2563eb'),ds('2창고그린',gph2g,'#16a34a'),ds('2창고블루',gph2b,'#7c3aed'),ds('3창고',gph3,'#ea580c')],opts:baseOpts,ref:'grossChart'},
+      {id:'return-chart',data:[ds('3창고',ret3,'#ea580c')],opts:baseOpts,ref:'returnChart'},
+    ];
+    var chartVars={pickChart,packChart,depChart,rackChart,grossChart,returnChart};
+    charts.forEach(function(c){
+      if(window[c.ref])window[c.ref].destroy();
+      window[c.ref]=new Chart(document.getElementById(c.id),{type:'line',data:{labels,datasets:c.data},options:c.opts});
+    });
   }catch(e){}
 }
 
-document.getElementById('d-date').addEventListener('change',function(){refreshDashboard();});
-
-async function fetchSheetData(sheetId) {
-  var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + '/values/A1:Z1000?key=' + SHEETS_API_KEY;
-  var resp = await fetch(url);
-  if(!resp.ok) throw new Error('시트 읽기 실패 (' + resp.status + ')');
-  var data = await resp.json();
-  return data.values || [];
-}
-
-async function loadProductivity() {
-  var resultEl = document.getElementById('productivity-result');
-  resultEl.innerHTML = '<p style="font-size:13px;color:#888;">불러오는 중...</p>';
-  try {
-    var values = await fetchSheetData(SHEET_ID_1);
-    if(!values || values.length < 2) {
-      resultEl.innerHTML = '<p style="font-size:13px;color:#888;">데이터가 없습니다.</p>';
-      return;
-    }
-    var headers = values[0];
-    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<tr><td style="color:#888;padding:4px 0;">이름</td><td style="color:#888;padding:4px 0;text-align:right;">송장 수</td><td style="color:#888;padding:4px 0;text-align:right;">비율</td></tr>';
-    var counts = [];
-    var total = 0;
-    headers.forEach(function(name, col) {
-      if(!name || name.trim() === '') return;
-      var count = 0;
-      for(var row=1; row<values.length; row++) {
-        if(values[row] && values[row][col] && String(values[row][col]).trim() !== '') count++;
+// CSV export
+async function exportCSV(){
+  try{
+    var allOut=await window.dbGet('out');
+    if(!allOut){showToast('내보낼 데이터가 없습니다.');return;}
+    var entries=Object.values(allOut).sort(function(a,b){return a.date>b.date?1:-1;});
+    var headers=['날짜'];
+    WHS.forEach(function(wh){
+      headers.push(WH_LABELS[wh]+'_출고작업량',WH_LABELS[wh]+'_출고건수',WH_LABELS[wh]+'_피킹효율',WH_LABELS[wh]+'_포장효율',WH_LABELS[wh]+'_알바의존도');
+    });
+    var rows=[headers.join(',')];
+    for(var i=0;i<entries.length;i++){
+      var d=entries[i];
+      var row=[d.date];
+      for(var j=0;j<WHS.length;j++){
+        var wh=WHS[j];
+        var mgr=await getMgr(d.date,wh);
+        var m=calcMetrics(d,mgr,wh);
+        row.push(
+          d.stats&&d.stats[wh]?d.stats[wh].score:'',
+          d.stats&&d.stats[wh]?d.stats[wh].total:'',
+          m&&m.pickEff!==null?m.pickEff:'',
+          m&&m.packEff!==null?m.packEff:'',
+          m&&m.dep!==null?m.dep:''
+        );
       }
-      counts.push({name: name, count: count});
-      total += count;
-    });
-    counts.sort(function(a,b){return b.count - a.count;});
-    counts.forEach(function(item) {
-      var pct = total > 0 ? Math.round(item.count/total*100) : 0;
-      html += '<tr style="border-top:1px solid #f0f0f0;">';
-      html += '<td style="padding:6px 0;">' + item.name + '</td>';
-      html += '<td style="padding:6px 0;text-align:right;font-weight:500;">' + item.count + '건</td>';
-      html += '<td style="padding:6px 0;text-align:right;color:#888;">' + pct + '%</td>';
-      html += '</tr>';
-    });
-    html += '<tr style="border-top:2px solid #e0e0e0;"><td style="padding:6px 0;font-weight:600;">합계</td><td style="padding:6px 0;text-align:right;font-weight:600;">' + total + '건</td><td></td></tr>';
-    html += '</table>';
-    resultEl.innerHTML = html;
-  } catch(e) {
-    resultEl.innerHTML = '<p style="font-size:13px;color:#e53935;">오류: ' + e.message + '</p>';
-  }
+      rows.push(row.join(','));
+    }
+    var csv='\uFEFF'+rows.join('\n');
+    var blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.download='창고_운영데이터_'+today()+'.csv';a.click();
+    URL.revokeObjectURL(url);
+    showToast('CSV 내보내기 완료!');
+  }catch(e){showToast('내보내기 오류: '+e.message);}
 }
+
+// Google Sheets
+async function fetchSheetData(sheetId){
+  var url='https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/A1:Z1000?key='+SHEETS_API_KEY;
+  var resp=await fetch(url);
+  if(!resp.ok)throw new Error('시트 읽기 실패 ('+resp.status+')');
+  var data=await resp.json();
+  return data.values||[];
+}
+
+async function loadProductivity(){
+  var resultEl=document.getElementById('productivity-result');
+  resultEl.innerHTML='<p style="font-size:13px;color:var(--ink-3);">불러오는 중...</p>';
+  try{
+    var values=await fetchSheetData(SHEET_ID_1);
+    if(!values||values.length<2){resultEl.innerHTML='<p style="font-size:13px;color:var(--ink-3);">데이터가 없습니다.</p>';return;}
+    var headers=values[0];
+    var counts=[];var total=0;
+    headers.forEach(function(name,col){
+      if(!name||name.trim()==='')return;
+      var count=0;
+      for(var row=1;row<values.length;row++){if(values[row]&&values[row][col]&&String(values[row][col]).trim()!=='')count++;}
+      counts.push({name,count});total+=count;
+    });
+    counts.sort(function(a,b){return b.count-a.count;});
+    var html='<table class="data-table"><thead><tr><th>이름</th><th class="num">송장 수</th><th class="num">비율</th></tr></thead><tbody>';
+    counts.forEach(function(item){
+      var pct=total>0?Math.round(item.count/total*100):0;
+      html+='<tr><td>'+item.name+'</td><td class="num" style="font-weight:500;">'+item.count+'건</td><td class="num" style="color:var(--ink-3);">'+pct+'%</td></tr>';
+    });
+    html+='<tr style="background:var(--bg-soft);"><td style="font-weight:600;">합계</td><td class="num" style="font-weight:600;">'+total+'건</td><td></td></tr>';
+    html+='</tbody></table>';
+    resultEl.innerHTML=html;
+  }catch(e){resultEl.innerHTML='<p style="font-size:13px;color:var(--neg);">오류: '+e.message+'</p>';}
+}
+
+document.getElementById('d-date').addEventListener('change',function(){refreshDashboard();});
 </script>
 </body>
 </html>
