@@ -342,7 +342,7 @@ function updateWhView(){
   var wh=document.getElementById('m-wh').value;
   var showHaul=wh==='2창고블루'||wh==='3창고';
   var showContainer=wh==='2창고블루'||wh==='3창고';
-  var showRack=wh==='2창고블루';
+  var showRack=wh==='1창고'||wh==='2창고블루'||wh==='3창고';
   var show3=wh==='3창고';
   document.getElementById('m-haul-section').style.display=showHaul?'block':'none';
   document.getElementById('m-container-section').style.display=showContainer?'block':'none';
@@ -391,8 +391,8 @@ async function saveManagerData(){
     returnCount:wh==='3창고'?(parseInt(document.getElementById('m-return-count').value)||0):0,
     returnStaff:wh==='3창고'?(parseInt(document.getElementById('m-return-staff').value)||0):0,
     returnHours:wh==='3창고'?(parseFloat(document.getElementById('m-return-hours').value)||0):0,
-    rackRemain:(is1||isGreen)?0:(parseInt(document.getElementById('m-rack-remain').value)||0),
-    rackTotal:(is1||isGreen)?0:(parseInt(document.getElementById('m-rack-total').value)||0),
+    rackRemain:isGreen?0:(parseInt(document.getElementById('m-rack-remain').value)||0),
+    rackTotal:isGreen?0:(parseInt(document.getElementById('m-rack-total').value)||0),
     note:document.getElementById('m-note').value,
     ts:Date.now()
   };
