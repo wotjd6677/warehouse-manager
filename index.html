@@ -237,6 +237,7 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
 <div class="tab-bar">
   <button class="tab-btn active" onclick="showTab('manager')" id="tab-manager">매니저 입력</button>
   <button class="tab-btn" onclick="showTab('dashboard')" id="tab-dashboard">대표 대시보드</button>
+  <button class="tab-btn" onclick="showTab('cs')" id="tab-cs">CS 현황</button>
 </div>
 
 <div class="main">
@@ -265,39 +266,43 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
 
     <hr class="divider">
     <p class="section-ttl">알바</p>
+    <p class="hint" style="margin-bottom:12px;">오전 × 8시간 / 오후 × 5시간 자동 계산</p>
 
     <p class="section-label">피킹 알바</p>
     <div class="sub-box">
       <div class="form-row" style="margin-bottom:0;">
-        <div><p class="form-label">인원 수</p><input type="number" id="m-pick-staff" min="0" value="0"></div>
-        <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-pick-hours" min="0" step="0.5" value="0"></div>
+        <div><p class="form-label">오전 인원</p><input type="number" id="m-pick-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
+        <div><p class="form-label">오후 인원</p><input type="number" id="m-pick-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
       </div>
-      <p class="hint">예: 2명 × 8시간 = 16시간</p>
+      <p class="hint" id="m-pick-preview" style="margin-top:6px;">투입시간: 0시간</p>
     </div>
 
     <p class="section-label">포장 알바</p>
     <div class="sub-box">
       <div class="form-row" style="margin-bottom:0;">
-        <div><p class="form-label">인원 수</p><input type="number" id="m-pack-staff" min="0" value="0"></div>
-        <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-pack-hours" min="0" step="0.5" value="0"></div>
+        <div><p class="form-label">오전 인원</p><input type="number" id="m-pack-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
+        <div><p class="form-label">오후 인원</p><input type="number" id="m-pack-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
       </div>
+      <p class="hint" id="m-pack-preview" style="margin-top:6px;">투입시간: 0시간</p>
     </div>
 
     <p class="section-label">그로스 알바</p>
     <div class="sub-box">
       <div class="form-row" style="margin-bottom:0;">
-        <div><p class="form-label">인원 수</p><input type="number" id="m-gross-staff" min="0" value="0"></div>
-        <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-gross-hours" min="0" step="0.5" value="0"></div>
+        <div><p class="form-label">오전 인원</p><input type="number" id="m-gross-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
+        <div><p class="form-label">오후 인원</p><input type="number" id="m-gross-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
       </div>
+      <p class="hint" id="m-gross-preview" style="margin-top:6px;">투입시간: 0시간</p>
     </div>
 
     <div id="m-haul-section" style="display:none;">
-      <p class="section-label">하역 알바</p>
+      <p class="section-label">하역 알바 <span style="font-size:11px;color:var(--ink-3);">× 3시간 자동 계산</span></p>
       <div class="sub-box">
-        <div class="form-row" style="margin-bottom:0;">
-          <div><p class="form-label">인원 수</p><input type="number" id="m-haul-staff" min="0" value="0"></div>
-          <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-haul-hours" min="0" step="0.5" value="0"></div>
+        <div style="max-width:50%;">
+          <p class="form-label">인원 수</p>
+          <input type="number" id="m-haul-staff" min="0" value="0" oninput="updateAlbaPreview()">
         </div>
+        <p class="hint" id="m-haul-preview" style="margin-top:6px;">투입시간: 0시간</p>
       </div>
     </div>
 
@@ -327,19 +332,30 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
       <p class="section-label">반품 알바</p>
       <div class="sub-box">
         <div class="form-row" style="margin-bottom:0;">
-          <div><p class="form-label">인원 수</p><input type="number" id="m-return-staff" min="0" value="0"></div>
-          <div><p class="form-label">총 투입시간 (시간)</p><input type="number" id="m-return-hours" min="0" step="0.5" value="0"></div>
+          <div><p class="form-label">오전 인원</p><input type="number" id="m-return-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
+          <div><p class="form-label">오후 인원</p><input type="number" id="m-return-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
         </div>
+        <p class="hint" id="m-return-preview" style="margin-top:6px;">투입시간: 0시간</p>
       </div>
     </div>
 
     <div id="m-rack-section" style="display:none;">
       <hr class="divider">
       <p class="section-ttl">파레트랙 공간 현황</p>
-      <div class="form-row3">
-        <div><p class="form-label">남은 자리</p><input type="number" id="m-rack-remain" min="0" value="0" oninput="updateRackPreview()"></div>
-        <div><p class="form-label">전체 자리</p><input type="number" id="m-rack-total" min="0" value="0" oninput="updateRackPreview()"></div>
-        <div><p class="form-label">사용률</p><div style="padding:8px 0;"><span id="m-rack-pct" style="font-size:20px;font-weight:600;">—</span></div></div>
+      <div class="form-row" style="margin-bottom:10px;">
+        <div>
+          <p class="form-label">남은 자리</p>
+          <input type="number" id="m-rack-remain" min="0" value="0" oninput="updateRackPreview()">
+        </div>
+        <div>
+          <p class="form-label">전체 자리 (고정)</p>
+          <div style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--bg-soft);font-size:14px;color:var(--ink-2);" id="m-rack-total-display">—</div>
+          <input type="hidden" id="m-rack-total" value="0">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:12px;color:var(--ink-2);">사용률</span>
+        <span id="m-rack-pct" style="font-size:16px;font-weight:600;">—</span>
       </div>
       <div class="rack-bar-wrap"><div id="m-rack-bar" style="height:100%;border-radius:4px;background:var(--blue);width:0%;transition:width .3s;"></div></div>
     </div>
@@ -504,6 +520,60 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
   </div>
 
 </div><!-- end view-dashboard -->
+
+<!-- CS 현황 -->
+<div id="view-cs" style="display:none;">
+
+  <div class="period-bar">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);">월 선택</span>
+      <select id="cs-month" onchange="loadCSData()" style="width:140px;">
+        <option value="02월 전체통계">2월</option>
+        <option value="03월 전체통계">3월</option>
+        <option value="04월 전체통계">4월</option>
+        <option value="05월 전체통계" selected>5월</option>
+      </select>
+    </div>
+    <div style="margin-left:auto;">
+      <button onclick="loadCSData()" style="font-size:12px;padding:6px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);cursor:pointer;font-family:inherit;color:var(--ink);">불러오기</button>
+    </div>
+  </div>
+
+  <!-- KPI 카드 -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;" id="cs-kpis">
+    <div class="metric-card"><p class="wh-label">총 문의건수</p><p class="value" id="cs-total">—</p><p class="sub" id="cs-total-s">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">일평균 문의</p><p class="value" id="cs-daily-avg">—</p><p class="sub" id="cs-daily-avg-s">영업일 기준</p></div>
+    <div class="metric-card"><p class="wh-label">반품 완료</p><p class="value" id="cs-return">—</p><p class="sub" id="cs-return-s">데이터 없음</p></div>
+    <div class="metric-card"><p class="wh-label">교환 완료</p><p class="value" id="cs-exchange">—</p><p class="sub" id="cs-exchange-s">데이터 없음</p></div>
+  </div>
+
+  <!-- 채널별 비중 -->
+  <div class="card">
+    <p class="card-title">채널별 문의 비중</p>
+    <div id="cs-channel-bars"></div>
+  </div>
+
+  <!-- 일별 추이 차트 -->
+  <div class="card">
+    <p class="card-title">일별 총 문의건수 추이</p>
+    <div style="position:relative;height:220px;margin-bottom:8px;"><canvas id="cs-trend-chart"></canvas></div>
+    <p class="chart-label" style="margin-top:14px;">채널별 추이</p>
+    <div style="position:relative;height:220px;"><canvas id="cs-channel-chart"></canvas></div>
+  </div>
+
+  <!-- 교환/반품 처리 현황 -->
+  <div class="card">
+    <p class="card-title">교환 / 반품 처리 현황</p>
+    <div id="cs-exchange-return"></div>
+  </div>
+
+  <!-- 원본 데이터 테이블 -->
+  <div class="card">
+    <p class="card-title">일별 상세 데이터</p>
+    <div style="overflow-x:auto;" id="cs-table"></div>
+  </div>
+
+</div>
 </div><!-- end main -->
 
 <div class="toast" id="toast"></div>
@@ -515,6 +585,7 @@ const WHS = ['1창고','2창고그린','2창고블루','3창고'];
 const WH_LABELS = {'1창고':'1창고','2창고그린':'2창고 그린','2창고블루':'2창고 블루','3창고':'3창고'};
 const WH_COLORS = {'1창고':'#2563eb','2창고그린':'#16a34a','2창고블루':'#7c3aed','3창고':'#ea580c'};
 const WH_ID = {'1창고':'1','2창고그린':'2g','2창고블루':'2b','3창고':'3'};
+const RACK_TOTALS = {'1창고':476, '2창고블루':1035, '3창고':1100};
 
 var pickChart=null,packChart=null,depChart=null,rackChart=null,grossChart=null,returnChart=null;
 var isFirebaseReady=false;
@@ -557,16 +628,19 @@ document.addEventListener('keydown',function(e){
 });
 
 function showTab(t){
-  if(t==='dashboard'){
+  if(t==='dashboard'||t==='cs'){
     var pw=prompt('대표 비밀번호를 입력하세요');
     if(pw===null)return;
     if(pw!=='carpediem1224!!'){alert('비밀번호가 틀렸습니다.');return;}
   }
   document.getElementById('view-manager').style.display=t==='manager'?'block':'none';
   document.getElementById('view-dashboard').style.display=t==='dashboard'?'block':'none';
+  document.getElementById('view-cs').style.display=t==='cs'?'block':'none';
   document.getElementById('tab-manager').classList.toggle('active',t==='manager');
   document.getElementById('tab-dashboard').classList.toggle('active',t==='dashboard');
+  document.getElementById('tab-cs').classList.toggle('active',t==='cs');
   if(t==='dashboard')refreshDashboard();
+  if(t==='cs')loadCSData();
 }
 
 function updateWhView(){
@@ -575,6 +649,45 @@ function updateWhView(){
   document.getElementById('m-container-section').style.display=(wh==='2창고블루'||wh==='3창고')?'block':'none';
   document.getElementById('m-rack-section').style.display=(wh==='1창고'||wh==='2창고블루'||wh==='3창고')?'block':'none';
   document.getElementById('m-return-section').style.display=(wh==='3창고')?'block':'none';
+  // 파레트랙 전체 자리 고정값 세팅
+  var rackTotal = RACK_TOTALS[wh] || 0;
+  document.getElementById('m-rack-total').value = rackTotal;
+  var dispEl = document.getElementById('m-rack-total-display');
+  if(dispEl) dispEl.textContent = rackTotal > 0 ? rackTotal.toLocaleString()+'자리' : '—';
+  document.getElementById('m-rack-remain').value = 0;
+  updateRackPreview();
+}
+
+function calcAlbaHours(amId, pmId){
+  var am = parseInt(document.getElementById(amId).value)||0;
+  var pm = parseInt(document.getElementById(pmId).value)||0;
+  return am*8 + pm*5;
+}
+
+function updateAlbaPreview(){
+  var configs = [
+    {am:'m-pick-am', pm:'m-pick-pm', preview:'m-pick-preview'},
+    {am:'m-pack-am', pm:'m-pack-pm', preview:'m-pack-preview'},
+    {am:'m-gross-am', pm:'m-gross-pm', preview:'m-gross-preview'},
+  ];
+  configs.forEach(function(c){
+    var el=document.getElementById(c.preview);
+    if(!el)return;
+    var h=calcAlbaHours(c.am,c.pm);
+    el.textContent='투입시간: '+h+'시간';
+  });
+  // 하역
+  var haulEl=document.getElementById('m-haul-preview');
+  if(haulEl){
+    var haul=parseInt(document.getElementById('m-haul-staff').value)||0;
+    haulEl.textContent='투입시간: '+(haul*3)+'시간';
+  }
+  // 반품
+  var retEl=document.getElementById('m-return-preview');
+  if(retEl){
+    var h2=calcAlbaHours('m-return-am','m-return-pm');
+    retEl.textContent='투입시간: '+h2+'시간';
+  }
 }
 
 function updateRackPreview(){
@@ -598,22 +711,31 @@ async function saveManagerData(){
   if(!wh||!date){showToast('창고와 날짜를 선택해주세요.');return;}
   var isGreen=wh==='2창고그린';
   var staffCnt=parseInt(document.getElementById('m-staff').value)||0;
+  var pickAm=parseInt(document.getElementById('m-pick-am').value)||0;
+  var pickPm=parseInt(document.getElementById('m-pick-pm').value)||0;
+  var packAm=parseInt(document.getElementById('m-pack-am').value)||0;
+  var packPm=parseInt(document.getElementById('m-pack-pm').value)||0;
+  var grossAm=parseInt(document.getElementById('m-gross-am').value)||0;
+  var grossPm=parseInt(document.getElementById('m-gross-pm').value)||0;
+  var haulCnt=isGreen?0:(parseInt(document.getElementById('m-haul-staff').value)||0);
+  var retAm=wh==='3창고'?(parseInt(document.getElementById('m-return-am').value)||0):0;
+  var retPm=wh==='3창고'?(parseInt(document.getElementById('m-return-pm').value)||0):0;
   var data={
     wh,date,staff:staffCnt,staffHours:staffCnt*8,
-    pickStaff:parseInt(document.getElementById('m-pick-staff').value)||0,
-    pickHours:parseFloat(document.getElementById('m-pick-hours').value)||0,
-    packStaff:parseInt(document.getElementById('m-pack-staff').value)||0,
-    packHours:parseFloat(document.getElementById('m-pack-hours').value)||0,
-    grossStaff:parseInt(document.getElementById('m-gross-staff').value)||0,
-    grossHours:parseFloat(document.getElementById('m-gross-hours').value)||0,
-    haulStaff:isGreen?0:(parseInt(document.getElementById('m-haul-staff').value)||0),
-    haulHours:isGreen?0:(parseFloat(document.getElementById('m-haul-hours').value)||0),
+    pickStaff:pickAm+pickPm,
+    pickHours:pickAm*8+pickPm*5,
+    packStaff:packAm+packPm,
+    packHours:packAm*8+packPm*5,
+    grossStaff:grossAm+grossPm,
+    grossHours:grossAm*8+grossPm*5,
+    haulStaff:haulCnt,
+    haulHours:haulCnt*3,
     pallet:parseInt(document.getElementById('m-pallet').value)||0,
     box:parseInt(document.getElementById('m-box').value)||0,
     container:isGreen?0:(parseInt(document.getElementById('m-container').value)||0),
     returnCount:wh==='3창고'?(parseInt(document.getElementById('m-return-count').value)||0):0,
-    returnStaff:wh==='3창고'?(parseInt(document.getElementById('m-return-staff').value)||0):0,
-    returnHours:wh==='3창고'?(parseFloat(document.getElementById('m-return-hours').value)||0):0,
+    returnStaff:retAm+retPm,
+    returnHours:retAm*8+retPm*5,
     rackRemain:isGreen?0:(parseInt(document.getElementById('m-rack-remain').value)||0),
     rackTotal:isGreen?0:(parseInt(document.getElementById('m-rack-total').value)||0),
     note:document.getElementById('m-note').value,
@@ -1062,6 +1184,162 @@ async function loadProductivity(){
 }
 
 document.getElementById('d-date').addEventListener('change',function(){refreshDashboard();});
+
+// ===== CS 현황 =====
+const CS_SHEET_ID = '1aZEMCW8_O6CRVoQOm5bP2NbJGh131SISPzcEXcDRh2o';
+var csTrendChart = null, csChannelChart = null;
+
+const CS_CHANNELS = [
+  {key:'naver', label:'네이버 채팅', col:2},
+  {key:'kakao', label:'카카오톡', col:3},
+  {key:'coupang', label:'쿠팡 고객센터', col:7},
+  {key:'ohouse', label:'오늘의집', col:8},
+  {key:'naver_board', label:'네이버 게시판', col:5},
+  {key:'coupang_board', label:'쿠팡 게시판', col:6},
+  {key:'gmarket', label:'지마켓/옥션', col:9},
+  {key:'toss', label:'토스/퀸잇', col:10},
+  {key:'zigzag', label:'지그재그', col:11},
+  {key:'ably', label:'에이블리', col:4},
+];
+const CH_COLORS = ['#2563eb','#7c3aed','#ea580c','#16a34a','#d97706','#0891b2','#9333ea','#be185d','#65a30d','#0369a1'];
+
+async function loadCSData(){
+  var sheetName = document.getElementById('cs-month').value;
+  try{
+    var url = 'https://sheets.googleapis.com/v4/spreadsheets/'+CS_SHEET_ID+'/values/'+encodeURIComponent(sheetName)+'?key='+SHEETS_API_KEY;
+    var resp = await fetch(url);
+    if(!resp.ok) throw new Error('시트 읽기 실패');
+    var data = await resp.json();
+    var rows = data.values || [];
+    processCSData(rows);
+  }catch(e){
+    showToast('CS 데이터 오류: '+e.message);
+  }
+}
+
+function processCSData(rows){
+  // 날짜 행 찾기 (월일 패턴)
+  var dataRows = [];
+  rows.forEach(function(row){
+    var dateCell = '';
+    for(var i=0;i<3;i++){if(row[i]&&/[0-9]+월[0-9]+일/.test(String(row[i]))){dateCell=String(row[i]);break;}}
+    if(!dateCell)return;
+    var total = 0;
+    for(var j=0;j<row.length;j++){
+      var v=parseInt(row[j])||0;
+      if(j>=2&&j<=16&&v>0) total+=v;
+    }
+    // 총건수 컬럼 우선
+    var totalCol = parseInt(row[17])||0;
+    if(totalCol>0) total=totalCol;
+    if(total===0)return;
+    
+    var channels={};
+    CS_CHANNELS.forEach(function(ch){
+      channels[ch.key]=parseInt(row[ch.col])||0;
+    });
+    
+    dataRows.push({
+      date: dateCell,
+      total: total,
+      channels: channels,
+      exchangeCollect: parseInt(row[19])||0,
+      exchangeDone: parseInt(row[20])||0,
+      returnCollect: parseInt(row[21])||0,
+      returnDone: parseInt(row[22])||0,
+    });
+  });
+
+  if(!dataRows.length){showToast('데이터가 없습니다.');return;}
+
+  // KPI
+  var grandTotal = dataRows.reduce(function(s,r){return s+r.total;},0);
+  var dailyAvg = Math.round(grandTotal/dataRows.length);
+  var totalReturn = dataRows.reduce(function(s,r){return s+r.returnDone;},0);
+  var totalExchange = dataRows.reduce(function(s,r){return s+r.exchangeDone;},0);
+  
+  document.getElementById('cs-total').textContent = grandTotal.toLocaleString();
+  document.getElementById('cs-total-s').textContent = dataRows.length+'일 합계';
+  document.getElementById('cs-daily-avg').textContent = dailyAvg.toLocaleString();
+  document.getElementById('cs-daily-avg-s').textContent = dataRows.length+'일 기준';
+  document.getElementById('cs-return').textContent = totalReturn.toLocaleString();
+  document.getElementById('cs-return-s').textContent = '건 완료';
+  document.getElementById('cs-exchange').textContent = totalExchange.toLocaleString();
+  document.getElementById('cs-exchange-s').textContent = '건 완료';
+
+  // 채널별 비중 바
+  var channelTotals = {};
+  CS_CHANNELS.forEach(function(ch){
+    channelTotals[ch.key] = dataRows.reduce(function(s,r){return s+(r.channels[ch.key]||0);},0);
+  });
+  var maxCh = Math.max.apply(null, Object.values(channelTotals));
+  var sorted = CS_CHANNELS.slice().sort(function(a,b){return channelTotals[b.key]-channelTotals[a.key];});
+  var barsHtml = '';
+  sorted.forEach(function(ch,i){
+    var val=channelTotals[ch.key];if(!val)return;
+    var pct=Math.round(val/grandTotal*100);
+    var w=Math.round(val/maxCh*100);
+    barsHtml+='<div style="margin-bottom:10px;">';
+    barsHtml+='<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">';
+    barsHtml+='<span>'+ch.label+'</span><span style="color:var(--ink-2);">'+val.toLocaleString()+'건 ('+pct+'%)</span></div>';
+    barsHtml+='<div style="background:var(--line);border-radius:4px;height:8px;overflow:hidden;">';
+    barsHtml+='<div style="height:100%;border-radius:4px;background:'+CH_COLORS[i%CH_COLORS.length]+';width:'+w+'%;transition:width .4s;"></div></div></div>';
+  });
+  document.getElementById('cs-channel-bars').innerHTML=barsHtml;
+
+  // 일별 추이 차트
+  var labels=dataRows.map(function(r){return r.date.replace(/[0-9]+월/,'');});
+  var totals=dataRows.map(function(r){return r.total;});
+  if(csTrendChart)csTrendChart.destroy();
+  csTrendChart=new Chart(document.getElementById('cs-trend-chart'),{
+    type:'bar',
+    data:{labels,datasets:[{label:'총 문의',data:totals,backgroundColor:'rgba(37,99,235,0.7)',borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:true,ticks:{font:{size:10},color:'#888'},grid:{color:'rgba(128,128,128,0.08)'}},
+              x:{ticks:{font:{size:10},color:'#888',maxRotation:0},grid:{display:false}}}}
+  });
+
+  // 채널별 추이
+  var topChannels=sorted.slice(0,5);
+  var channelDatasets=topChannels.map(function(ch,i){
+    return{label:ch.label,data:dataRows.map(function(r){return r.channels[ch.key]||0;}),
+      borderColor:CH_COLORS[i],backgroundColor:CH_COLORS[i],pointRadius:2,tension:0.3,borderWidth:2,spanGaps:true};
+  });
+  if(csChannelChart)csChannelChart.destroy();
+  csChannelChart=new Chart(document.getElementById('cs-channel-chart'),{
+    type:'line',data:{labels,datasets:channelDatasets},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,labels:{font:{size:10},boxWidth:8,padding:10,color:'#888'}}},
+      scales:{y:{beginAtZero:true,ticks:{font:{size:10},color:'#888'},grid:{color:'rgba(128,128,128,0.08)'}},
+              x:{ticks:{font:{size:10},color:'#888',maxRotation:0},grid:{display:false}}}}
+  });
+
+  // 교환/반품 현황
+  var erHtml='<table class="data-table"><thead><tr><th>날짜</th><th class="num">교환수거</th><th class="num">교환완료</th><th class="num">반품수거</th><th class="num">반품완료</th></tr></thead><tbody>';
+  dataRows.forEach(function(r){
+    if(!r.exchangeCollect&&!r.exchangeDone&&!r.returnCollect&&!r.returnDone)return;
+    erHtml+='<tr><td>'+r.date+'</td>';
+    erHtml+='<td class="num">'+r.exchangeCollect+'</td><td class="num">'+r.exchangeDone+'</td>';
+    erHtml+='<td class="num">'+r.returnCollect+'</td><td class="num">'+r.returnDone+'</td>';
+    erHtml+='</tr>';
+  });
+  erHtml+='</tbody></table>';
+  document.getElementById('cs-exchange-return').innerHTML=erHtml;
+
+  // 상세 테이블
+  var tableHtml='<table class="data-table"><thead><tr><th>날짜</th><th class="num">총건수</th>';
+  sorted.slice(0,6).forEach(function(ch){tableHtml+='<th class="num">'+ch.label+'</th>';});
+  tableHtml+='</tr></thead><tbody>';
+  dataRows.forEach(function(r){
+    tableHtml+='<tr><td>'+r.date+'</td><td class="num" style="font-weight:600;">'+r.total+'</td>';
+    sorted.slice(0,6).forEach(function(ch){tableHtml+='<td class="num">'+(r.channels[ch.key]||'—')+'</td>';});
+    tableHtml+='</tr>';
+  });
+  tableHtml+='</tbody></table>';
+  document.getElementById('cs-table').innerHTML=tableHtml;
+}
+
 </script>
 </body>
 </html>
