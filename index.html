@@ -266,33 +266,33 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
 
     <hr class="divider">
     <p class="section-ttl">알바</p>
-    <p class="hint" style="margin-bottom:12px;">오전 × 8시간 / 오후 × 5시간 자동 계산</p>
+    <p class="hint" style="margin-bottom:12px;">풀타임 × 8시간 / 오후 파트타임 × 5시간 자동 계산</p>
 
     <p class="section-label">피킹 알바</p>
     <div class="sub-box">
       <div class="form-row" style="margin-bottom:0;">
-        <div><p class="form-label">오전 인원</p><input type="number" id="m-pick-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
-        <div><p class="form-label">오후 인원</p><input type="number" id="m-pick-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
+        <div><p class="form-label">풀타임 인원</p><input type="number" id="m-pick-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
+        <div><p class="form-label">오후 파트타임 인원</p><input type="number" id="m-pick-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
       </div>
-      <p class="hint" id="m-pick-preview" style="margin-top:6px;">투입시간: 0시간</p>
+      <p class="hint" id="m-pick-preview" style="margin-top:6px;">풀타임/오후 파트타임 인원 입력</p>
     </div>
 
     <p class="section-label">포장 알바</p>
     <div class="sub-box">
       <div class="form-row" style="margin-bottom:0;">
-        <div><p class="form-label">오전 인원</p><input type="number" id="m-pack-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
-        <div><p class="form-label">오후 인원</p><input type="number" id="m-pack-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
+        <div><p class="form-label">풀타임 인원</p><input type="number" id="m-pack-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
+        <div><p class="form-label">오후 파트타임 인원</p><input type="number" id="m-pack-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
       </div>
-      <p class="hint" id="m-pack-preview" style="margin-top:6px;">투입시간: 0시간</p>
+      <p class="hint" id="m-pack-preview" style="margin-top:6px;">풀타임/오후 파트타임 인원 입력</p>
     </div>
 
     <p class="section-label">그로스 알바</p>
     <div class="sub-box">
       <div class="form-row" style="margin-bottom:0;">
-        <div><p class="form-label">오전 인원</p><input type="number" id="m-gross-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
-        <div><p class="form-label">오후 인원</p><input type="number" id="m-gross-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
+        <div><p class="form-label">풀타임 인원</p><input type="number" id="m-gross-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
+        <div><p class="form-label">오후 파트타임 인원</p><input type="number" id="m-gross-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
       </div>
-      <p class="hint" id="m-gross-preview" style="margin-top:6px;">투입시간: 0시간</p>
+      <p class="hint" id="m-gross-preview" style="margin-top:6px;">풀타임/오후 파트타임 인원 입력</p>
     </div>
 
     <div id="m-haul-section" style="display:none;">
@@ -302,7 +302,7 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
           <p class="form-label">인원 수</p>
           <input type="number" id="m-haul-staff" min="0" value="0" oninput="updateAlbaPreview()">
         </div>
-        <p class="hint" id="m-haul-preview" style="margin-top:6px;">투입시간: 0시간</p>
+        <p class="hint" id="m-haul-preview" style="margin-top:6px;">풀타임/오후 파트타임 인원 입력</p>
       </div>
     </div>
 
@@ -332,10 +332,10 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
       <p class="section-label">반품 알바</p>
       <div class="sub-box">
         <div class="form-row" style="margin-bottom:0;">
-          <div><p class="form-label">오전 인원</p><input type="number" id="m-return-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
-          <div><p class="form-label">오후 인원</p><input type="number" id="m-return-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
+          <div><p class="form-label">풀타임 인원</p><input type="number" id="m-return-am" min="0" value="0" oninput="updateAlbaPreview()"></div>
+          <div><p class="form-label">오후 파트타임 인원</p><input type="number" id="m-return-pm" min="0" value="0" oninput="updateAlbaPreview()"></div>
         </div>
-        <p class="hint" id="m-return-preview" style="margin-top:6px;">투입시간: 0시간</p>
+        <p class="hint" id="m-return-preview" style="margin-top:6px;">풀타임/오후 파트타임 인원 입력</p>
       </div>
     </div>
 
@@ -674,7 +674,7 @@ function updateAlbaPreview(){
     var el=document.getElementById(c.preview);
     if(!el)return;
     var h=calcAlbaHours(c.am,c.pm);
-    el.textContent='투입시간: '+h+'시간';
+    el.textContent = (am>0?'풀타임 '+am+'명 ':'' ) + (pm>0?'오후파트 '+pm+'명 ':'' ) + '→ 총 '+h+'h';
   });
   // 하역
   var haulEl=document.getElementById('m-haul-preview');
