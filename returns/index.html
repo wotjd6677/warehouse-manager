@@ -874,7 +874,7 @@ function ingest(rows){
     if(num.length<8)continue;
     const pname=(r[cAlias]!=null&&r[cAlias]!=='')?r[cAlias]:r[cName];   // 품목=옵션별칭
     const item={i:String(pname||''),o:String(r[cOpt]||''),b:String(r[cBrand]||''),
-      q:String(r[cQty]||''),r:String(r[cReason]||''),c:String(r[cClaim]||''),w:warehouse(r[cProd]),
+      q:String(r[cQty]||'').replace(/\.0$/,''),r:String(r[cReason]||''),c:String(r[cClaim]||''),w:warehouse(r[cProd]),
       a:String(r[cProd]||'').trim(),
       p:(cPn>=0&&cDn>=0)?mkcode(r[cPn],r[cDn]):''};
     if(!DATA[num])DATA[num]=[];
@@ -1051,9 +1051,9 @@ function printLabels(labels, caption){
   @page{size:A4;margin:0}
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;background:#fff;color:#000}
-  .sheet{width:210mm;padding:13mm 9mm;display:grid;grid-template-columns:repeat(3,64mm);
-    grid-auto-rows:29.6mm;column-gap:6mm;row-gap:0;}
-  .lbl{width:64mm;height:29.6mm;padding:2.5mm 3mm;display:flex;flex-direction:column;
+  .sheet{width:210mm;padding:13mm 11.1mm 0 11.1mm;display:grid;grid-template-columns:repeat(3,62.6mm);
+    grid-auto-rows:30.1mm;column-gap:0;row-gap:0;}
+  .lbl{width:62.6mm;height:30.1mm;padding:2.5mm 3mm;display:flex;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;overflow:hidden;position:relative;
     border:0.3px solid #ddd;}
   .lbl .whtag{position:absolute;top:1.5mm;right:2.5mm;font-size:7pt;color:#777}
@@ -1066,7 +1066,7 @@ function printLabels(labels, caption){
     border-radius:7px;background:#000;color:#ffd84d;cursor:pointer}
   @media print{.bar{display:none}.lbl{border:none}}
 </style></head><body>
-<div class="bar"><span>🏷 ${esc(caption||'라벨')} · ${labels.length}장 · 폼텍 27칸 라벨지에 인쇄 (여백 없음/실제크기로)</span>
+<div class="bar"><span>🏷 ${esc(caption||'라벨')} · ${labels.length}장 · AL027(27칸) 라벨지 · 인쇄 시 배율 100%/여백 없음/A4</span>
   <button onclick="window.print()">인쇄 / PDF 저장</button></div>
 <div style="height:42px"></div>
 <div class="sheet">${cells}</div>
