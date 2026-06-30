@@ -1041,7 +1041,6 @@ document.getElementById('sabangBtn').addEventListener('click',()=>{
 function printLabels(labels, caption){
   if(!labels.length){showToast('라벨 뽑을 항목이 없습니다',1);return}
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  // 27칸(3x9)마다 한 페이지로 끊어서 sheet를 만든다 → 페이지 넘어가도 누적 밀림 없음
   const PER=27, pages=[];
   for(let s=0;s<labels.length;s+=PER){
     const cells=labels.slice(s,s+PER).map(l=>
@@ -1095,7 +1094,8 @@ document.getElementById('labelBtn').addEventListener('click',()=>{
   const labels=[];
   rows.forEach(r=>{
     const q=Math.max(parseInt(r.qty)||1,1);
-    const wh=(typeof sabangGrp==='function')?sabangGrp(r.a):'';
+    const wh=(r.w&&String(r.w).trim())?String(r.w).trim()
+            :((typeof sabangGrp==='function')?sabangGrp(r.a):'');
     for(let k=0;k<q;k++)labels.push({name:String(r.i),wh:wh});
   });
   printLabels(labels,'전체 입고 라벨');
@@ -1318,10 +1318,14 @@ document.getElementById('devTag').textContent='이 기기: '+DEVICE;
 (function(){
   let _idx=null;
   function buildIdx(){
-    _idx=PRODUCT_MASTER.map(it=>({
-      i:it.i,o:it.o,b:it.b||'',w:it.w||'',p:it.p||'',
-      hay:(it.i+' '+it.o+' '+(it.b||'')+' '+(it.p||'')).toLowerCase()
-    }));
+    _idx=PRODUCT_MASTER.map(it=>{
+      // PRODUCT_MASTER의 it.w는 '원본 상품약어'(예: 신hb, 3hb, 2창고).
+      // 정상 스캔과 동일하게: 약어는 a로 보존, 표시 창고 w는 warehouse(약어)로 변환.
+      const alias=String(it.w||'').trim();
+      const wdisp=(typeof warehouse==='function')?warehouse(alias):alias;
+      return {i:it.i,o:it.o,b:it.b||'',w:wdisp,a:alias,p:it.p||'',
+        hay:(it.i+' '+it.o+' '+(it.b||'')+' '+(it.p||'')).toLowerCase()};
+    });
     return _idx;
   }
   function search(q){
@@ -1387,7 +1391,7 @@ document.getElementById('devTag').textContent='이 기기: '+DEVICE;
     // 오배송 전용 키 (송장 없음) — 'M-기기-시각' 으로 scanLog 1건 생성
     const logKey='M-'+(typeof DEVICE!=='undefined'?DEVICE:'X')+'-'+Date.now().toString(36);
     const now=Date.now();
-    const item={i:r.i,o:r.o,b:r.b||'',w:r.w||'',a:r.w||'',p:r.p||'',q:String(q),
+    const item={i:r.i,o:r.o,b:r.b||'',w:r.w||'',a:(r.a!=null?r.a:r.w)||'',p:r.p||'',q:String(q),
       rem:0, inQ:q, rejs:{}};
     scanLog[logKey]={num:logKey,t:now,dt:now,done:true,dev:(typeof DEVICE!=='undefined'?DEVICE:''),
       mis:true, items:[item]};
@@ -1406,7 +1410,7 @@ document.getElementById('devTag').textContent='이 기기: '+DEVICE;
     const tag=disp+'|'+reason;
     const logKey='M-'+(typeof DEVICE!=='undefined'?DEVICE:'X')+'-'+Date.now().toString(36);
     const now=Date.now();
-    const item={i:r.i,o:r.o,b:r.b||'',w:r.w||'',a:r.w||'',p:r.p||'',q:String(q),
+    const item={i:r.i,o:r.o,b:r.b||'',w:r.w||'',a:(r.a!=null?r.a:r.w)||'',p:r.p||'',q:String(q),
       rem:0, inQ:0, rejs:{[tag]:q}};
     scanLog[logKey]={num:logKey,t:now,dt:now,done:true,dev:(typeof DEVICE!=='undefined'?DEVICE:''),
       mis:true, rej:true, reason:tag, items:[item]};
