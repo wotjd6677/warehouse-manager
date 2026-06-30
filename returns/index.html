@@ -1062,8 +1062,7 @@ function printLabels(labels, caption){
   @media print{
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .lbl{display:flex !important;align-items:center !important;justify-content:center !important}
-    .barspacer{display:none !important}
-    .sheet{margin-top:-23mm !important}
+    .bar,.barspacer{display:none !important}
   }
   .bar{position:fixed;top:0;left:0;right:0;background:#ffd84d;color:#000;
     padding:8px 14px;font-size:13px;font-weight:700;display:flex;justify-content:space-between;
