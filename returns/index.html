@@ -1041,9 +1041,15 @@ document.getElementById('sabangBtn').addEventListener('click',()=>{
 function printLabels(labels, caption){
   if(!labels.length){showToast('라벨 뽑을 항목이 없습니다',1);return}
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const cells=labels.map(l=>
-    `<div class="lbl"><div class="whtag">${esc(l.wh||'')}</div><div class="nm">${esc(l.name)}</div></div>`
-  ).join('');
+  // 27칸(3x9)마다 한 페이지로 끊어서 sheet를 만든다 → 페이지 넘어가도 누적 밀림 없음
+  const PER=27, pages=[];
+  for(let s=0;s<labels.length;s+=PER){
+    const cells=labels.slice(s,s+PER).map(l=>
+      `<div class="lbl"><div class="whtag">${esc(l.wh||'')}</div><div class="nm">${esc(l.name)}</div></div>`
+    ).join('');
+    pages.push(`<div class="sheet">${cells}</div>`);
+  }
+  const sheetsHtml=pages.join('');
   const win=window.open('','_label','width=900,height=1000');
   win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
 <title>반품 양품화 라벨</title>
@@ -1051,8 +1057,10 @@ function printLabels(labels, caption){
   @page{size:A4;margin:0}
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;background:#fff;color:#000}
-  .sheet{width:210mm;padding:13mm 11.1mm 0 11.1mm;display:grid;grid-template-columns:repeat(3,62.6mm);
-    grid-auto-rows:30.1mm;column-gap:0;row-gap:0;}
+  .sheet{width:210mm;height:297mm;padding:13mm 11.1mm 0 11.1mm;display:grid;grid-template-columns:repeat(3,62.6mm);
+    grid-auto-rows:30.1mm;column-gap:0;row-gap:0;break-after:page;page-break-after:always;
+    break-inside:avoid;overflow:hidden;}
+  .sheet:last-child{break-after:auto;page-break-after:auto;}
   .lbl{width:62.6mm;height:30.1mm;padding:2.5mm 3mm;display:flex;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;overflow:hidden;position:relative;
     border:0.3px solid #ddd;}
@@ -1074,7 +1082,7 @@ function printLabels(labels, caption){
 <div class="bar"><span>🏷 ${esc(caption||'라벨')} · ${labels.length}장 · AL027(27칸) 라벨지 · 배율 100% / 페이지맞춤 끄기 / 여백 없음 / A4 세로</span>
   <button onclick="window.print()">인쇄 / PDF 저장</button></div>
 <div class="barspacer" style="height:42px"></div>
-<div class="sheet">${cells}</div>
+${sheetsHtml}
 </body></html>`);
   win.document.close();
   showToast('🏷 라벨 '+labels.length+'장 — 새 창에서 인쇄');
