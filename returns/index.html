@@ -1062,6 +1062,8 @@ function printLabels(labels, caption){
   @media print{
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .lbl{display:flex !important;align-items:center !important;justify-content:center !important}
+    .barspacer{display:none !important}
+    .sheet{margin-top:-23mm !important}
   }
   .bar{position:fixed;top:0;left:0;right:0;background:#ffd84d;color:#000;
     padding:8px 14px;font-size:13px;font-weight:700;display:flex;justify-content:space-between;
@@ -1070,9 +1072,9 @@ function printLabels(labels, caption){
     border-radius:7px;background:#000;color:#ffd84d;cursor:pointer}
   @media print{.bar{display:none}.lbl{border:none}}
 </style></head><body>
-<div class="bar"><span>🏷 ${esc(caption||'라벨')} · ${labels.length}장 · AL027(27칸) 라벨지 · 인쇄 시 배율 100%/여백 없음/A4</span>
+<div class="bar"><span>🏷 ${esc(caption||'라벨')} · ${labels.length}장 · AL027(27칸) 라벨지 · 배율 100% / 페이지맞춤 끄기 / 여백 없음 / A4 세로</span>
   <button onclick="window.print()">인쇄 / PDF 저장</button></div>
-<div style="height:42px"></div>
+<div class="barspacer" style="height:42px"></div>
 <div class="sheet">${cells}</div>
 </body></html>`);
   win.document.close();
