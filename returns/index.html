@@ -1057,8 +1057,12 @@ function printLabels(labels, caption){
     align-items:center;justify-content:center;text-align:center;overflow:hidden;position:relative;
     border:0.3px solid #ddd;}
   .lbl .whtag{position:absolute;top:1.5mm;right:2.5mm;font-size:7pt;color:#777}
-  .lbl .nm{font-size:10pt;font-weight:800;line-height:1.2;
-    display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all;}
+  .lbl .nm{font-size:10pt;font-weight:800;line-height:1.25;max-height:24mm;overflow:hidden;
+    word-break:break-all;width:100%;}
+  @media print{
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .lbl{display:flex !important;align-items:center !important;justify-content:center !important}
+  }
   .bar{position:fixed;top:0;left:0;right:0;background:#ffd84d;color:#000;
     padding:8px 14px;font-size:13px;font-weight:700;display:flex;justify-content:space-between;
     align-items:center;z-index:9}
@@ -1343,9 +1347,11 @@ document.getElementById('devTag').textContent='이 기기: '+DEVICE;
         +(pr!==''?'<span style="font-size:12px;color:var(--dim)">'+Number(pr).toLocaleString()+'원</span>':'')
         +'<input type="number" min="1" value="1" class="mq" data-i="'+i+'" style="width:54px;padding:5px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--txt);text-align:center" onclick="event.stopPropagation()">'
         +'<button class="madd" data-i="'+i+'" style="padding:6px 12px;background:var(--ok);color:#06240f;border:none;border-radius:6px;font-weight:700;cursor:pointer">입고</button>'
+        +'<button class="mrej" data-i="'+i+'" data-disp="폐기" style="padding:6px 10px;background:#3a2326;color:#ffb3b3;border:1px solid #5c2b2b;border-radius:6px;font-weight:700;cursor:pointer">🗑폐기</button>'
+        +'<button class="mrej" data-i="'+i+'" data-disp="기부" style="padding:6px 10px;background:#23303a;color:#9fd2ff;border:1px solid #2b4a5c;border-radius:6px;font-weight:700;cursor:pointer">🎁기부</button>'
         +'</div></div>';
     }).join('');
-    // 행/버튼 이벤트
+    // 입고 버튼
     b.querySelectorAll('.madd').forEach(btn=>{
       btn.addEventListener('click',e=>{
         e.stopPropagation();
@@ -1353,6 +1359,18 @@ document.getElementById('devTag').textContent='이 기기: '+DEVICE;
         const qIn=b.querySelector('.mq[data-i="'+i+'"]');
         const q=Math.max(1, parseInt(qIn&&qIn.value)||1);
         addInbound(rows[i], q);
+      });
+    });
+    // 폐기/기부 버튼
+    b.querySelectorAll('.mrej').forEach(btn=>{
+      btn.addEventListener('click',e=>{
+        e.stopPropagation();
+        const i=+btn.dataset.i;
+        const disp=btn.dataset.disp;
+        const qIn=b.querySelector('.mq[data-i="'+i+'"]');
+        const q=Math.max(1, parseInt(qIn&&qIn.value)||1);
+        const reason=(prompt(disp+' 사유를 입력하세요 (예: 오배송, 파손/하자, 오염)','오배송')||'').trim()||'오배송';
+        addReject(rows[i], q, disp, reason);
       });
     });
   }
@@ -1370,9 +1388,33 @@ document.getElementById('devTag').textContent='이 기기: '+DEVICE;
     refreshStats();
     if(typeof renderInbound==='function')renderInbound();
     showToast('📦 오배송 입고 +'+q+'  ('+esc(r.i).slice(0,16)+')',0);
-    // 검색창 비우고 결과 지운 뒤, 수동입고 박스를 접고 송장창으로 포커스 복귀
+    finishManual();
+  }
+  // 오배송 수동 폐기/기부 — 입고와 같은 흐름이되 inQ:0 + rejs에 기록 → 불가 집계/엑셀에 자연 반영
+  function addReject(r, q, disp, reason){
+    disp=String(disp||'폐기').trim()||'폐기';
+    reason=String(reason||'오배송').trim()||'오배송';
+    const tag=disp+'|'+reason;
+    const logKey='M-'+(typeof DEVICE!=='undefined'?DEVICE:'X')+'-'+Date.now().toString(36);
+    const now=Date.now();
+    const item={i:r.i,o:r.o,b:r.b||'',w:r.w||'',a:r.w||'',p:r.p||'',q:String(q),
+      rem:0, inQ:0, rejs:{[tag]:q}};
+    scanLog[logKey]={num:logKey,t:now,dt:now,done:true,dev:(typeof DEVICE!=='undefined'?DEVICE:''),
+      mis:true, rej:true, reason:tag, items:[item]};
+    rebuildFromLog();
+    persist();
+    if(typeof window.fbPushScan==='function'){try{window.fbPushScan(logKey,scanLog[logKey]);}catch(_){}}
+    refreshStats();
+    if(typeof renderInbound==='function')renderInbound();
+    if(typeof renderReject==='function')renderReject();
+    const emoji=disp==='기부'?'🎁':'🗑';
+    showToast(emoji+' 오배송 '+disp+' ('+reason+') +'+q+'  ('+esc(r.i).slice(0,14)+')',1);
+    finishManual();
+  }
+  // 처리 후 공통: 검색창 비우고 박스 접고 송장창 포커스
+  function finishManual(){
     const s=sb(); if(s)s.value='';
-    box().innerHTML='';
+    const bx=box(); if(bx)bx.innerHTML='';
     const body=document.getElementById('manualBody');
     if(body)body.style.display='none';
     if(typeof inv!=='undefined'&&inv)setTimeout(()=>inv.focus(),0);
