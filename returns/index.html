@@ -576,10 +576,78 @@ function renderInbound(){
   if(!rows.length){body.innerHTML='<div class="empty">아직 입고된 품목이 없습니다.</div>';return}
   rows.sort((a,b)=>b.last-a.last);
   body.innerHTML=`<table class="invtbl"><thead><tr>
-    <th>품목</th><th>옵션</th><th>브랜드</th><th>창고</th><th style="text-align:center">입고수량</th></tr></thead><tbody>`+
+    <th>품목</th><th>옵션</th><th>브랜드</th><th>창고</th><th style="text-align:center">입고수량</th><th style="text-align:center">수정</th></tr></thead><tbody>`+
     rows.map(r=>`<tr><td>${esc(r.i)}</td><td>${esc(r.o&&r.o!=='nan'?r.o:'')}</td>
-      <td>${esc(r.b)}</td><td class="whc">${esc(r.w)}</td><td class="qn">${r.qty}</td></tr>`).join('')+
+      <td>${esc(r.b)}</td><td class="whc">${esc(r.w)}</td><td class="qn">${r.qty}</td>
+      <td style="text-align:center"><button class="inedit" data-i="${esc(r.i)}" data-o="${esc(r.o)}" data-w="${esc(r.w)}" data-q="${r.qty}" style="padding:3px 9px;font-size:12px;background:var(--card2,#2a2f3a);color:var(--txt);border:1px solid var(--line);border-radius:6px;cursor:pointer">✏ 수정</button></td></tr>`).join('')+
     `</tbody></table>`;
+  body.querySelectorAll('.inedit').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const cur=parseInt(btn.dataset.q)||0;
+      const ans=prompt(`입고수량 수정\n\n${btn.dataset.i}\n${btn.dataset.o&&btn.dataset.o!=='nan'?btn.dataset.o+'\n':''}현재 ${cur}개 → 새 수량 입력`, String(cur));
+      if(ans===null)return;
+      const nv=parseInt(ans);
+      if(isNaN(nv)||nv<0){showToast('0 이상의 숫자를 입력하세요',1);return;}
+      if(nv===cur)return;
+      adjustInboundQty(btn.dataset.i, btn.dataset.o, btn.dataset.w, nv);
+    });
+  });
+}
+// 입고수량을 목표값(newQty)으로 조정 — scanLog(원본) + 파레트 내역을 함께 반영
+function adjustInboundQty(i,o,w,newQty){
+  const k=i+'|'+o+'|'+w;
+  const cur=inbound[k]?inbound[k].qty:0;
+  let delta=newQty-cur;   // 음수=줄임, 양수=늘림
+  if(delta===0)return;
+  if(delta<0){
+    // ── 줄이기: scanLog inQ에서 차감 (여러 송장에 흩어져 있으면 순차 차감) ──
+    let need=-delta;
+    Object.values(scanLog).forEach(s=>{
+      (s.items||[]).forEach(it=>{
+        if(need<=0)return;
+        if((it.i+'|'+it.o+'|'+it.w)===k && (it.inQ||0)>0){
+          const take=Math.min(it.inQ,need);
+          it.inQ-=take;
+          if(it.rem!=null)it.rem+=take;   // 잔여수량 복원(다시 처리 가능)
+          need-=take;
+        }
+      });
+    });
+    // ── 파레트 내역에서도 같은 수량만큼 차감 ──
+    let pneed=-delta;
+    Object.values(palletLog).forEach(pl=>{
+      if(!pl.items)return;
+      for(let x=pl.items.length-1;x>=0;x--){
+        if(pneed<=0)break;
+        const pit=pl.items[x];
+        if((pit.i+'|'+pit.o+'|'+pit.w)===k){
+          if(pit.qty<=pneed){pneed-=pit.qty;pl.items.splice(x,1);}
+          else{pit.qty-=pneed;pneed=0;}
+        }
+      }
+    });
+  }else{
+    // ── 늘리기: 가장 최근 해당 품목 scanLog 항목의 inQ 증가 + 파레트에도 추가 ──
+    let target=null;
+    Object.values(scanLog).forEach(s=>{
+      (s.items||[]).forEach(it=>{
+        if((it.i+'|'+it.o+'|'+it.w)===k)target=it;
+      });
+    });
+    if(target){
+      target.inQ=(target.inQ||0)+delta;
+      if(target.rem!=null)target.rem=Math.max(0,target.rem-delta);
+      pAdd(target,delta,'수정',Date.now());
+    }else{showToast('원본 기록을 찾지 못해 늘릴 수 없습니다',1);return;}
+  }
+  rebuildFromLog();
+  persist();
+  // 동기화: 관련 송장 + 파레트 전체
+  Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
+  try{syncPalletAll();}catch(e){}
+  refreshStats();renderInbound();
+  if(typeof renderPalletBar==='function')renderPalletBar();
+  showToast(`✏ 입고수량 수정: ${cur} → ${newQty}`,0);
 }
 function renderReject(){
   const rows=Object.values(rejected);
@@ -1041,14 +1109,9 @@ document.getElementById('sabangBtn').addEventListener('click',()=>{
 function printLabels(labels, caption){
   if(!labels.length){showToast('라벨 뽑을 항목이 없습니다',1);return}
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const PER=27, pages=[];
-  for(let s=0;s<labels.length;s+=PER){
-    const cells=labels.slice(s,s+PER).map(l=>
-      `<div class="lbl"><div class="whtag">${esc(l.wh||'')}</div><div class="nm">${esc(l.name)}</div></div>`
-    ).join('');
-    pages.push(`<div class="sheet">${cells}</div>`);
-  }
-  const sheetsHtml=pages.join('');
+  const cells=labels.map(l=>
+    `<div class="lbl"><div class="whtag">${esc(l.wh||'')}</div><div class="nm">${esc(l.name)}</div></div>`
+  ).join('');
   const win=window.open('','_label','width=900,height=1000');
   win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
 <title>반품 양품화 라벨</title>
@@ -1056,10 +1119,8 @@ function printLabels(labels, caption){
   @page{size:A4;margin:0}
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;background:#fff;color:#000}
-  .sheet{width:210mm;height:297mm;padding:13mm 11.1mm 0 11.1mm;display:grid;grid-template-columns:repeat(3,62.6mm);
-    grid-auto-rows:30.1mm;column-gap:0;row-gap:0;break-after:page;page-break-after:always;
-    break-inside:avoid;overflow:hidden;}
-  .sheet:last-child{break-after:auto;page-break-after:auto;}
+  .sheet{width:210mm;padding:13mm 11.1mm 0 11.1mm;display:grid;grid-template-columns:repeat(3,62.6mm);
+    grid-auto-rows:30.1mm;column-gap:0;row-gap:0;}
   .lbl{width:62.6mm;height:30.1mm;padding:2.5mm 3mm;display:flex;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;overflow:hidden;position:relative;
     border:0.3px solid #ddd;}
@@ -1069,7 +1130,8 @@ function printLabels(labels, caption){
   @media print{
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .lbl{display:flex !important;align-items:center !important;justify-content:center !important}
-    .bar,.barspacer{display:none !important}
+    .barspacer{display:none !important}
+    .sheet{margin-top:-23mm !important}
   }
   .bar{position:fixed;top:0;left:0;right:0;background:#ffd84d;color:#000;
     padding:8px 14px;font-size:13px;font-weight:700;display:flex;justify-content:space-between;
@@ -1081,7 +1143,7 @@ function printLabels(labels, caption){
 <div class="bar"><span>🏷 ${esc(caption||'라벨')} · ${labels.length}장 · AL027(27칸) 라벨지 · 배율 100% / 페이지맞춤 끄기 / 여백 없음 / A4 세로</span>
   <button onclick="window.print()">인쇄 / PDF 저장</button></div>
 <div class="barspacer" style="height:42px"></div>
-${sheetsHtml}
+<div class="sheet">${cells}</div>
 </body></html>`);
   win.document.close();
   showToast('🏷 라벨 '+labels.length+'장 — 새 창에서 인쇄');
@@ -1094,8 +1156,7 @@ document.getElementById('labelBtn').addEventListener('click',()=>{
   const labels=[];
   rows.forEach(r=>{
     const q=Math.max(parseInt(r.qty)||1,1);
-    const wh=(r.w&&String(r.w).trim())?String(r.w).trim()
-            :((typeof sabangGrp==='function')?sabangGrp(r.a):'');
+    const wh=(typeof sabangGrp==='function')?sabangGrp(r.a):'';
     for(let k=0;k<q;k++)labels.push({name:String(r.i),wh:wh});
   });
   printLabels(labels,'전체 입고 라벨');
@@ -1318,14 +1379,10 @@ document.getElementById('devTag').textContent='이 기기: '+DEVICE;
 (function(){
   let _idx=null;
   function buildIdx(){
-    _idx=PRODUCT_MASTER.map(it=>{
-      // PRODUCT_MASTER의 it.w는 '원본 상품약어'(예: 신hb, 3hb, 2창고).
-      // 정상 스캔과 동일하게: 약어는 a로 보존, 표시 창고 w는 warehouse(약어)로 변환.
-      const alias=String(it.w||'').trim();
-      const wdisp=(typeof warehouse==='function')?warehouse(alias):alias;
-      return {i:it.i,o:it.o,b:it.b||'',w:wdisp,a:alias,p:it.p||'',
-        hay:(it.i+' '+it.o+' '+(it.b||'')+' '+(it.p||'')).toLowerCase()};
-    });
+    _idx=PRODUCT_MASTER.map(it=>({
+      i:it.i,o:it.o,b:it.b||'',w:it.w||'',p:it.p||'',
+      hay:(it.i+' '+it.o+' '+(it.b||'')+' '+(it.p||'')).toLowerCase()
+    }));
     return _idx;
   }
   function search(q){
@@ -1391,16 +1448,27 @@ document.getElementById('devTag').textContent='이 기기: '+DEVICE;
     // 오배송 전용 키 (송장 없음) — 'M-기기-시각' 으로 scanLog 1건 생성
     const logKey='M-'+(typeof DEVICE!=='undefined'?DEVICE:'X')+'-'+Date.now().toString(36);
     const now=Date.now();
-    const item={i:r.i,o:r.o,b:r.b||'',w:r.w||'',a:(r.a!=null?r.a:r.w)||'',p:r.p||'',q:String(q),
+    const item={i:r.i,o:r.o,b:r.b||'',w:r.w||'',a:r.w||'',p:r.p||'',q:String(q),
       rem:0, inQ:q, rejs:{}};
     scanLog[logKey]={num:logKey,t:now,dt:now,done:true,dev:(typeof DEVICE!=='undefined'?DEVICE:''),
       mis:true, items:[item]};
+    // 창고별 파레트에 적재 (일반 입고와 동일하게 합산)
+    let palMsg='';
+    if(typeof pAdd==='function'){
+      try{
+        pAdd({i:r.i,o:r.o,b:r.b||'',w:r.w||'',a:r.w||'',p:r.p||''}, q, logKey, now);
+        const wh=r.w||'미지정';
+        palMsg=' → '+wh+'▶'+((typeof openPallet!=='undefined'&&openPallet[wh])||'-');
+      }catch(_){}
+    }
     rebuildFromLog();
     persist();
     if(typeof window.fbPushScan==='function'){try{window.fbPushScan(logKey,scanLog[logKey]);}catch(_){}}
+    if(typeof syncPalletAll==='function'){try{syncPalletAll();}catch(_){}}
     refreshStats();
     if(typeof renderInbound==='function')renderInbound();
-    showToast('📦 오배송 입고 +'+q+'  ('+esc(r.i).slice(0,16)+')',0);
+    if(typeof renderPalletBar==='function')renderPalletBar();
+    showToast('📦 오배송 입고 +'+q+'  ('+esc(r.i).slice(0,14)+')'+palMsg,0);
     finishManual();
   }
   // 오배송 수동 폐기/기부 — 입고와 같은 흐름이되 inQ:0 + rejs에 기록 → 불가 집계/엑셀에 자연 반영
@@ -1410,7 +1478,7 @@ document.getElementById('devTag').textContent='이 기기: '+DEVICE;
     const tag=disp+'|'+reason;
     const logKey='M-'+(typeof DEVICE!=='undefined'?DEVICE:'X')+'-'+Date.now().toString(36);
     const now=Date.now();
-    const item={i:r.i,o:r.o,b:r.b||'',w:r.w||'',a:(r.a!=null?r.a:r.w)||'',p:r.p||'',q:String(q),
+    const item={i:r.i,o:r.o,b:r.b||'',w:r.w||'',a:r.w||'',p:r.p||'',q:String(q),
       rem:0, inQ:0, rejs:{[tag]:q}};
     scanLog[logKey]={num:logKey,t:now,dt:now,done:true,dev:(typeof DEVICE!=='undefined'?DEVICE:''),
       mis:true, rej:true, reason:tag, items:[item]};
