@@ -970,8 +970,8 @@ drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over'
 //  · 2창고/1hb/1pr/빈값 → 1창고  · 신창고/신hb/3hb/3창고/3pr/케리프 → 2창고  · 3pl/대신 → 기타
 function sabangGrp(a){
   const s=String(a||'').trim().toLowerCase();
-  if(s===''||s==='nan'||s==='2창고'||s==='1hb'||s==='1pr')return '1창고';
-  if(s==='신창고'||s==='신hb'||s==='3hb'||s==='3창고'||s==='3pr'||s==='케리프')return '2창고';
+  if(s===''||s==='nan'||s==='1hb'||s==='1pr')return '1창고';
+  if(s==='2창고'||s==='신창고'||s==='신hb'||s==='3hb'||s==='3창고'||s==='3pr'||s==='케리프')return '2창고';
   return '기타';
 }
 // 사방넷 양식 시트 (상품코드 있는 것만, E열=바코드 빈칸, F열=품목명 확인용)
