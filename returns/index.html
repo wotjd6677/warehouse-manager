@@ -163,6 +163,8 @@
       <div class="sub">송장 찍어 조회 → 수량 확인 후 입고/불가 처리 · <span id="devTag" style="color:var(--blue)">이 기기: PC-1CO9</span></div></div>
     <div class="row">
       <button class="btn" id="labelBtn" style="background:#ffd84d;color:#000;border-color:#ffd84d">🏷 라벨 출력</button>
+      <input type="date" id="dayDate" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);font-size:13px">
+      <button class="btn" id="dayReportBtn" style="background:#2d7d46;color:#fff;border-color:#2d7d46">📅 당일 실적 다운로드</button>
     </div>
     <div class="row" style="display:none">
       <button class="btn green" id="sabangBtn">📦 사방넷 입고만</button>
@@ -262,6 +264,16 @@
       </div>
     </div>
   </div></div>
+
+  <div class="panel-sec" style="padding:8px 4px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px">
+      <span style="color:var(--dim)">집계 기준:</span>
+      <button class="btn" id="filToday" style="padding:5px 12px;font-size:12px;background:#2d7d46;color:#fff;border-color:#2d7d46">오늘만</button>
+      <button class="btn" id="filAll" style="padding:5px 12px;font-size:12px">전체</button>
+      <input type="date" id="filDate" style="padding:5px 8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--txt);font-size:12px">
+      <span id="filState" style="color:var(--dim);font-size:12px"></span>
+    </div>
+  </div>
 
   <div class="panel-sec">
     <div class="psec-head" id="invToggle" style="cursor:pointer">
@@ -570,10 +582,11 @@ function extractInv(raw){const m=raw.match(/원운송장[:\s]*([0-9]{10,14})/);i
 function key(it){return it.i+'|'+it.o+'|'+it.w}
 
 function renderInbound(){
-  const rows=Object.values(inbound);
-  document.getElementById('invSecCnt').textContent=rows.length+' 품목';
+  const rows=Object.values(filteredAgg().inbound);
+  const dtxt=dayFilter?(' · '+dayFilter):'';
+  document.getElementById('invSecCnt').textContent=rows.length+' 품목'+dtxt;
   const body=document.getElementById('invBody');
-  if(!rows.length){body.innerHTML='<div class="empty">아직 입고된 품목이 없습니다.</div>';return}
+  if(!rows.length){body.innerHTML='<div class="empty">'+(dayFilter?dayFilter+'에 입고된 품목이 없습니다.':'아직 입고된 품목이 없습니다.')+'</div>';return}
   rows.sort((a,b)=>b.last-a.last);
   body.innerHTML=`<table class="invtbl"><thead><tr>
     <th>품목</th><th>옵션</th><th>브랜드</th><th>창고</th><th style="text-align:center">입고수량</th><th style="text-align:center">라벨</th><th style="text-align:center">수정</th></tr></thead><tbody>`+
@@ -666,11 +679,12 @@ function adjustInboundQty(i,o,w,newQty){
   showToast(`✏ 입고수량 수정: ${cur} → ${newQty}`,0);
 }
 function renderReject(){
-  const rows=Object.values(rejected);
+  const rows=Object.values(filteredAgg().rejected);
   const totQ=rows.reduce((s,r)=>s+r.qty,0);
-  document.getElementById('rejSecCnt').textContent=rows.length+' 품목 / '+totQ+'개';
+  const dtxt=dayFilter?(' · '+dayFilter):'';
+  document.getElementById('rejSecCnt').textContent=rows.length+' 품목 / '+totQ+'개'+dtxt;
   const body=document.getElementById('rejBody');
-  if(!rows.length){body.innerHTML='<div class="empty">불가 처리된 품목이 없습니다.</div>';return}
+  if(!rows.length){body.innerHTML='<div class="empty">'+(dayFilter?dayFilter+'에 불가 처리된 품목이 없습니다.':'불가 처리된 품목이 없습니다.')+'</div>';return}
   rows.sort((a,b)=>b.last-a.last);
   body.innerHTML=`<table class="invtbl"><thead><tr>
     <th>품목</th><th>옵션</th><th>브랜드</th><th>창고</th><th>처분</th><th>사유</th><th style="text-align:center">수량</th></tr></thead><tbody>`+
@@ -892,6 +906,60 @@ function rebuildFromLog(){
   });
 }
 
+// 화면 표시용 날짜 필터 ('' = 전체). 입고/불가 집계 표에만 적용.
+var dayFilter='';
+// ===== 집계 표 날짜 필터 (오늘만/전체/날짜선택) =====
+(function(){
+  const pad=n=>String(n).padStart(2,'0');
+  const d=new Date();const todayStr=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  const bToday=document.getElementById('filToday');
+  const bAll=document.getElementById('filAll');
+  const inDate=document.getElementById('filDate');
+  const st=document.getElementById('filState');
+  if(!bToday)return;
+  inDate.value=todayStr;
+  function paint(){
+    const on='background:#2d7d46;color:#fff;border-color:#2d7d46';
+    bToday.style.cssText='padding:5px 12px;font-size:12px;'+(dayFilter===todayStr?on:'');
+    bAll.style.cssText='padding:5px 12px;font-size:12px;'+(dayFilter===''?on:'');
+    st.textContent=dayFilter?('▶ '+dayFilter+' 처리분만 표시'):'▶ 전체 누적 표시';
+    if(typeof renderInbound==='function')renderInbound();
+    if(typeof renderReject==='function')renderReject();
+  }
+  bToday.addEventListener('click',()=>{dayFilter=todayStr;inDate.value=todayStr;paint();});
+  bAll.addEventListener('click',()=>{dayFilter='';paint();});
+  inDate.addEventListener('change',()=>{dayFilter=inDate.value||'';paint();});
+  dayFilter=todayStr;
+  setTimeout(paint,300);
+})();
+function _ymdOf(t){if(!t)return'';const x=new Date(t);const p=n=>String(n).padStart(2,'0');
+  return x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate());}
+// 선택 날짜에 처리된 것만 집계해 {inbound, rejected} 반환 (dayFilter='' 이면 전역 그대로)
+function filteredAgg(){
+  if(!dayFilter)return {inbound:inbound, rejected:rejected};
+  const inb={}, rej={};
+  Object.values(scanLog).forEach(s=>{
+    const when=s.dt||s.t;
+    if(_ymdOf(when)!==dayFilter)return;
+    (s.items||[]).forEach(it=>{
+      const inQ=it.inQ||0;
+      if(inQ>0){
+        const k=it.i+'|'+it.o+'|'+it.w;
+        if(!inb[k])inb[k]={i:it.i,o:it.o,b:it.b,w:it.w,a:it.a||'',p:it.p||'',qty:0,last:when};
+        inb[k].qty+=inQ;
+      }
+      Object.entries(it.rejs||{}).forEach(([reason,q])=>{
+        if(q>0){
+          const k=it.i+'|'+it.o+'|'+it.w+'|'+reason;
+          if(!rej[k])rej[k]={i:it.i,o:it.o,b:it.b,w:it.w,a:it.a||'',p:it.p||'',reason,qty:0,last:when};
+          rej[k].qty+=q;
+        }
+      });
+    });
+  });
+  return {inbound:inb, rejected:rej};
+}
+
 function lookup(raw){
   const num=extractInv(String(raw));
   if(!num||num.length<10)return;
@@ -1080,9 +1148,9 @@ function printPalletSheet(pid){
 <div style="height:40px"></div>
 <div class="hd">
   <div class="pid">${esc(pid)}</div>
-  <div class="meta"><b>${esc(p.wh)}</b><br>마감 ${when}</div>
+  <div class="meta"><b>${esc(p.wh)}</b><br><span style="font-size:15pt;font-weight:900">📅 ${when.slice(0,10)}</span><br><span style="font-size:9pt;color:#666">마감 ${when}</span></div>
 </div>
-<div class="sub">양품화 파레트 부착용 · 역피킹 시 이 내역으로 수량 대조</div>
+<div class="sub">양품화 파레트 부착용 · 역피킹 시 이 내역으로 수량 대조 · 작업일 ${when.slice(0,10)}</div>
 <table>
   <thead><tr><th>No</th><th>품목</th><th>옵션</th><th>수량</th></tr></thead>
   <tbody>${body}</tbody>
@@ -1243,6 +1311,116 @@ function printPalletLabels(pid){
   printLabels(labels,'파레트 '+pid);
 }
 window.printPalletLabels=printPalletLabels;
+
+// ===== 📅 당일 실적 다운로드 — 선택 날짜에 처리된 입고/폐기/기부를 시트로 구분 =====
+(function(){
+  const di=document.getElementById('dayDate');
+  if(di){const d=new Date(),pad=n=>String(n).padStart(2,'0');
+    di.value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+})();
+document.getElementById('dayReportBtn').addEventListener('click',()=>{
+  const pad=n=>String(n).padStart(2,'0');
+  const dayStr=document.getElementById('dayDate').value;   // 'YYYY-MM-DD'
+  if(!dayStr){showToast('날짜를 선택하세요',1);return;}
+  const ymd=t=>{if(!t)return'';const x=new Date(t);return x.getFullYear()+'-'+pad(x.getMonth()+1)+'-'+pad(x.getDate());};
+  const hm=t=>{if(!t)return'';const x=new Date(t);return pad(x.getHours())+':'+pad(x.getMinutes());};
+
+  // 선택 날짜에 '처리 완료(dt)'된 scanLog 항목만 수집
+  const inRows=[], disRows=[], donRows=[];   // 입고 / 폐기 / 기부
+  Object.values(scanLog).forEach(s=>{
+    const when=s.dt||s.t;
+    if(ymd(when)!==dayStr)return;
+    (s.items||[]).forEach(it=>{
+      const opt=(it.o&&it.o!=='nan')?it.o:'';
+      // 입고(양품화) 수량
+      if((it.inQ||0)>0){
+        inRows.push([hm(when), it.i, opt, it.b, it.w, it.p||'', it.inQ, (s.mis?'오배송':s.num)]);
+      }
+      // 폐기/기부 수량 (rejs = {"폐기|사유":수량})
+      if(it.rejs){
+        Object.entries(it.rejs).forEach(([tag,q])=>{
+          if(!q)return;
+          const parts=String(tag).split('|');const disp=parts[0]||'폐기';const reason=parts[1]||'';
+          const row=[hm(when), it.i, opt, it.b, it.w, it.p||'', q, reason, (s.mis?'오배송':s.num)];
+          if(disp==='기부')donRows.push(row);else disRows.push(row);
+        });
+      }
+    });
+  });
+
+  if(!inRows.length && !disRows.length && !donRows.length){
+    showToast(dayStr+'에 처리된 내역이 없습니다',1);return;
+  }
+
+  const wb=XLSX.utils.book_new();
+  const sumInfo=[];
+
+  // ① 입고(양품화)
+  {
+    const a=[['['+dayStr+'] 입고(양품화) — 사방넷 반영 대상','','','','','','',''],
+      ['처리시각','품목명','옵션','브랜드','창고','상품코드','입고수량','원송장']];
+    inRows.sort((x,y)=>String(x[4]).localeCompare(String(y[4]))||String(x[1]).localeCompare(String(y[1])));
+    inRows.forEach(r=>a.push(r));
+    const tot=inRows.reduce((s,r)=>s+Number(r[6]||0),0);
+    a.push([]);a.push(['합계','','','','','',tot,'']);
+    const ws=XLSX.utils.aoa_to_sheet(a);
+    ws['!cols']=[{wch:9},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:8},{wch:15}];
+    XLSX.utils.book_append_sheet(wb,ws,'입고');
+    sumInfo.push('입고 '+tot);
+  }
+  // ② 폐기
+  {
+    const a=[['['+dayStr+'] 폐기','','','','','','',''],
+      ['처리시각','품목명','옵션','브랜드','창고','상품코드','수량','사유','원송장']];
+    disRows.sort((x,y)=>String(x[1]).localeCompare(String(y[1])));
+    disRows.forEach(r=>a.push([r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8]]));
+    const tot=disRows.reduce((s,r)=>s+Number(r[6]||0),0);
+    a.push([]);a.push(['합계','','','','','',tot,'','']);
+    const ws=XLSX.utils.aoa_to_sheet(a);
+    ws['!cols']=[{wch:9},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:6},{wch:14},{wch:15}];
+    XLSX.utils.book_append_sheet(wb,ws,'폐기');
+    sumInfo.push('폐기 '+tot);
+  }
+  // ③ 기부
+  {
+    const a=[['['+dayStr+'] 기부','','','','','','',''],
+      ['처리시각','품목명','옵션','브랜드','창고','상품코드','수량','사유','원송장']];
+    donRows.sort((x,y)=>String(x[1]).localeCompare(String(y[1])));
+    donRows.forEach(r=>a.push([r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8]]));
+    const tot=donRows.reduce((s,r)=>s+Number(r[6]||0),0);
+    a.push([]);a.push(['합계','','','','','',tot,'','']);
+    const ws=XLSX.utils.aoa_to_sheet(a);
+    ws['!cols']=[{wch:9},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:6},{wch:14},{wch:15}];
+    XLSX.utils.book_append_sheet(wb,ws,'기부');
+    sumInfo.push('기부 '+tot);
+  }
+  // ④ 요약 (창고별 입고/폐기/기부 — 보고·검산용)
+  {
+    const inTot=inRows.reduce((s,r)=>s+Number(r[6]||0),0);
+    const disTot=disRows.reduce((s,r)=>s+Number(r[6]||0),0);
+    const donTot=donRows.reduce((s,r)=>s+Number(r[6]||0),0);
+    // 창고별 집계 (입고행 col4=창고 col6=수량 / 폐기·기부행 col4=창고 col6=수량)
+    const whset=new Set();
+    inRows.forEach(r=>whset.add(r[4]||'미지정'));
+    disRows.forEach(r=>whset.add(r[4]||'미지정'));
+    donRows.forEach(r=>whset.add(r[4]||'미지정'));
+    const sumBy=(rows,wh)=>rows.filter(r=>(r[4]||'미지정')===wh).reduce((s,r)=>s+Number(r[6]||0),0);
+    const whs=[...whset].sort();
+    const a=[['['+dayStr+'] 당일 처리 요약','','',''],[],
+      ['창고','입고(양품화)','폐기','기부']];
+    whs.forEach(wh=>{a.push([wh, sumBy(inRows,wh), sumBy(disRows,wh), sumBy(donRows,wh)]);});
+    a.push(['── 전체 합계 ──', inTot, disTot, donTot]);
+    a.push([]);
+    a.push(['당일 총 처리량(입고+폐기+기부)', inTot+disTot+donTot,'','']);
+    const ws=XLSX.utils.aoa_to_sheet(a);
+    ws['!cols']=[{wch:20},{wch:14},{wch:10},{wch:10}];
+    XLSX.utils.book_append_sheet(wb,ws,'요약');
+  }
+
+  const fn='당일실적_'+dayStr.replace(/-/g,'')+'.xlsx';
+  XLSX.writeFile(wb,fn);
+  showToast('📅 '+dayStr+' 다운로드 — '+sumInfo.join(' / '));
+});
 
 document.getElementById('exportBtn').addEventListener('click',()=>{
   const rows=Object.values(inbound);
