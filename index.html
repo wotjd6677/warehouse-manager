@@ -420,15 +420,27 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
   <!-- 창고 부하 현황 (주문 데이터 자동 집계) -->
   <div class="section-header">
     <span class="section-title">⚖️ 창고 부하 현황</span>
-    <span class="section-desc">주문 물량·합포장 기반 · 어느 창고가 가장 많은 일을 감당하는지</span>
+    <span class="section-desc">부하 = 처리 물량(합포장 크기 반영) × 실제 포장비율 · 창고가 감당한 실제 노동 총량</span>
   </div>
-  <div style="display:flex;gap:6px;margin-bottom:10px;">
+  <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
     <button class="wl-chip on" data-wl="day" onclick="setWlPeriod('day',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--ink);color:var(--bg);cursor:pointer;font-family:inherit;">이 날짜</button>
     <button class="wl-chip" data-wl="week" onclick="setWlPeriod('week',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);cursor:pointer;font-family:inherit;">최근 7일</button>
     <button class="wl-chip" data-wl="all" onclick="setWlPeriod('all',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);cursor:pointer;font-family:inherit;">전체 누적</button>
+    <span style="width:1px;height:20px;background:var(--line);margin:0 4px;"></span>
+    <button class="wlmode-chip on" data-wlm="total" onclick="setWlMode('total',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--ink);color:var(--bg);cursor:pointer;font-family:inherit;">합친 부하</button>
+    <button class="wlmode-chip" data-wlm="split" onclick="setWlMode('split',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);cursor:pointer;font-family:inherit;">피킹·포장 분리</button>
   </div>
   <div id="workload-block" style="margin-bottom:20px;">
     <p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">주문 엑셀을 업로드하면 표시됩니다.</p>
+  </div>
+
+  <!-- 창고 진단 (부하 × 효율 교차) -->
+  <div class="section-header">
+    <span class="section-title">🧭 창고 진단</span>
+    <span class="section-desc">부하와 효율을 함께 보면 · 효율이 낮아도 부하가 높으면 '과부하'로 판단</span>
+  </div>
+  <div id="diagnosis-block" class="metrics-grid" style="margin-bottom:20px;">
+    <p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">데이터를 불러오면 표시됩니다.</p>
   </div>
 
   <!-- 피킹 효율 -->
@@ -611,6 +623,8 @@ const SHEETS_API_KEY = 'AIzaSyCfmn6uiBVv8GfFjRE47kw0dWipwhoenzk';
 const SHEET_ID_1 = '1nMLnF1QAvcHH_WOVpW5wH4Je6L7GytihSZ4ebMW3sro';
 const WHS = ['1창고','2창고그린','2창고블루','3창고'];
 const WH_LABELS = {'1창고':'1창고','2창고그린':'2창고 그린','2창고블루':'2창고 블루','3창고':'3창고'};
+// 실제 포장 비율: 2블루·3창고는 대부분 송장만 붙여 나감(무포장). 포장 효율·부하 계산에 반영.
+const PACK_RATIO = {'1창고':1.0,'2창고그린':1.0,'2창고블루':0.20,'3창고':0.15};
 const WH_COLORS = {'1창고':'#2563eb','2창고그린':'#16a34a','2창고블루':'#7c3aed','3창고':'#ea580c'};
 const WH_ID = {'1창고':'1','2창고그린':'2g','2창고블루':'2b','3창고':'3'};
 const RACK_TOTALS = {'1창고':476, '2창고블루':1035, '3창고':1100};
@@ -667,7 +681,7 @@ function showTab(t){
   document.getElementById('tab-manager').classList.toggle('active',t==='manager');
   document.getElementById('tab-dashboard').classList.toggle('active',t==='dashboard');
   document.getElementById('tab-cs').classList.toggle('active',t==='cs');
-  if(t==='dashboard'){loadAvailDates().then(refreshDashboard);_initMissRange();}
+  if(t==='dashboard'){loadAvailDates().then(function(){baselineCache=null;return refreshDashboard();});_initMissRange();}
   if(t==='cs')loadCSData();
 }
 
@@ -930,6 +944,7 @@ async function handleExcel(input){
       var last=dates[dates.length-1];
       var di=document.getElementById('d-date'); if(di)di.value=last;
       showToast('✅ '+done+'개 날짜 · '+totalRows+'행 집계 완료 ('+dates[0]+(dates.length>1?' ~ '+last:'')+')');
+      baselineCache=null;
       loadAvailDates().then(refreshDashboard);
     }catch(e){showToast('파일 읽기 오류: '+e.message);}
   };
@@ -1092,7 +1107,7 @@ function setWlPeriod(p, btn){
 }
 // 선택 기간의 여러 날짜 stats를 합산
 async function aggWorkload(){
-  var whs=WHS, acc={}; whs.forEach(function(w){acc[w]={score:0,total:0,single:0,multi:0};});
+  var whs=WHS, acc={}; whs.forEach(function(w){acc[w]={score:0,pickLoad:0,packLoad:0,total:0,single:0,multi:0,rawScore:0};});
   var curDate=document.getElementById('d-date').value;
   var targetDates=[];
   if(wlPeriod==='day'){ targetDates=[curDate]; }
@@ -1113,13 +1128,134 @@ async function aggWorkload(){
       used.push(d);
       whs.forEach(function(w){
         var s=out.stats[w];
-        if(s){ acc[w].score+=s.score||0; acc[w].total+=s.total||0; acc[w].single+=s.single||0; acc[w].multi+=s.multi||0; }
+        if(s){
+          var pr=PACK_RATIO[w]!==undefined?PACK_RATIO[w]:1.0;
+          var raw=s.score||0;
+          // 피킹 부하 = score의 50%(전량 발생) / 포장 부하 = score의 50% × 실제 포장비율
+          var pickLoad=raw*0.5;
+          var packLoad=raw*0.5*pr;
+          acc[w].pickLoad+=pickLoad;
+          acc[w].packLoad+=packLoad;
+          acc[w].score+=Math.round(pickLoad+packLoad); // 합친 부하
+          acc[w].rawScore+=raw;
+          acc[w].total+=s.total||0; acc[w].single+=s.single||0; acc[w].multi+=s.multi||0;
+        }
       });
     }
   });
   used.sort();
   var range = used.length>1 ? (used[0]+' ~ '+used[used.length-1]) : (used[0]||'');
   return {acc:acc, days:used.length, range:range};
+}
+// ===== 🧭 창고 진단 (자동 기준선: 그 창고 평소 중앙값 대비) =====
+async function refreshDiagnosis(out, mgrData){
+  var el=document.getElementById('diagnosis-block'); if(!el)return;
+  var base=baselineCache||await computeBaselines();
+  // 현재 선택 기간 부하 (표시용)
+  var wr=await aggWorkload();
+  var totScore=0; WHS.forEach(function(w){var s=wr.acc[w];if(s&&s.score>0)totScore+=s.score;});
+  var cards='';
+  var effSampleMin=99;
+  WHS.forEach(function(wh){
+    var s=wr.acc[wh];
+    if(!s||s.score<=0)return;
+    var loadPct=Math.round(s.score/totScore*1000)/10;
+    var m=calcMetrics(out,mgrData[wh],wh);
+    var eff=m?m.pickEff:null;
+    // 기준선(평소 중앙값) 대비 판정
+    var baseLoad=base.load[wh], basePickEff=base.pickEff[wh];
+    var hiLoad = baseLoad!==null ? (loadPct>=baseLoad) : (loadPct>=25); // 기준 없으면 25% 임시
+    var hiEff = (eff!==null&&basePickEff!==null) ? (eff>=basePickEff) : null;
+    if(base.effSamples[wh]<effSampleMin)effSampleMin=base.effSamples[wh];
+    var badge, bcolor, desc;
+    if(hiEff===null){ badge='—'; bcolor='var(--ink-3)'; desc='효율은 인원 입력 후 판정'; }
+    else if(hiLoad&&!hiEff){ badge='🔴 과부하 한계'; bcolor='var(--neg)'; desc='일 많은데 효율 눌림 → 인력 충원 검토'; }
+    else if(hiLoad&&hiEff){ badge='🟢 정예 운영'; bcolor='var(--pos)'; desc='부하·효율 모두 평소 이상 → 잘 돌아감'; }
+    else if(!hiLoad&&hiEff){ badge='⚪ 여유'; bcolor='var(--blue)'; desc='여력 있음 → 인력 재배치 여지'; }
+    else { badge='🟡 저활용'; bcolor='var(--warn)'; desc='부하·효율 모두 평소 이하 → 점검 필요'; }
+    var effBaseTxt = basePickEff!==null ? ' (평소 '+(Math.round(basePickEff*10)/10)+')' : '';
+    cards+='<div class="metric-card" style="border-left:3px solid '+bcolor+';">';
+    cards+='<p class="wh-label">'+WH_LABELS[wh]+'</p>';
+    cards+='<p class="value" style="font-size:15px;color:'+bcolor+';">'+badge+'</p>';
+    cards+='<p class="sub">부하 '+loadPct+'%'+(eff!==null?' · 효율 '+eff+'/h'+effBaseTxt:'')+'</p>';
+    cards+='<p class="sub" style="margin-top:3px;">'+desc+'</p></div>';
+  });
+  var guide='<div style="grid-column:1/-1;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:11px 14px;margin-bottom:2px;">';
+  guide+='<p style="font-size:12px;color:var(--ink-2);line-height:1.6;">💡 <b>읽는 법</b> — 각 창고의 <b>평소 수준(누적 데이터 '+base.days+'일치 중앙값)</b>과 비교한 판정입니다. 효율이 낮아도 <b style="color:var(--neg);">부하가 평소보다 높으면 과부하</b>, 효율이 평소 이상인데 <b style="color:var(--blue);">부하가 낮으면 여력</b>입니다.</p>';
+  if(effSampleMin<7){
+    guide+='<p style="font-size:12px;color:var(--warn);line-height:1.5;margin-top:7px;border-top:1px dashed var(--line);padding-top:7px;">⚠️ 일부 창고는 인원 입력 표본이 적어(효율 기준선 '+effSampleMin+'일치) 효율 판정이 덜 안정적입니다. 입력이 쌓일수록 정확해집니다.</p>';
+  }
+  guide+='</div>';
+  el.innerHTML=guide+cards;
+}
+
+// ===== 📐 기준선 자동 계산 (저장된 전체 데이터의 창고별 중앙값) =====
+var baselineCache=null;
+function median(arr){
+  if(!arr.length)return null;
+  var s=arr.slice().sort(function(a,b){return a-b;});
+  var m=Math.floor(s.length/2);
+  return s.length%2?s[m]:(s[m-1]+s[m])/2;
+}
+async function computeBaselines(){
+  var allOut=null, allMgr=null;
+  try{ allOut=await window.dbGet('out'); }catch(e){}
+  try{ allMgr=await window.dbGet('mgr'); }catch(e){}
+  var loadPctByWh={}, pickEffByWh={}, packEffByWh={};
+  WHS.forEach(function(w){loadPctByWh[w]=[];pickEffByWh[w]=[];packEffByWh[w]=[];});
+  var days=0;
+  if(allOut){
+    Object.keys(allOut).forEach(function(key){
+      var out=allOut[key]; if(!out||!out.stats)return;
+      days++;
+      // 그날 부하비중 (포장비율 반영한 score로)
+      var dayScores={}, totS=0;
+      WHS.forEach(function(w){
+        var s=out.stats[w];
+        if(s&&s.score>0){
+          var pr=PACK_RATIO[w]!==undefined?PACK_RATIO[w]:1.0;
+          var adj=(s.score||0)*(0.5+0.5*pr);
+          dayScores[w]=adj; totS+=adj;
+        }
+      });
+      WHS.forEach(function(w){
+        if(dayScores[w]&&totS>0)loadPctByWh[w].push(dayScores[w]/totS*100);
+      });
+      // 그날 효율 (mgr 인원 있으면)
+      var ymd=key.length===8?key.slice(0,4)+'-'+key.slice(4,6)+'-'+key.slice(6,8):key;
+      WHS.forEach(function(w){
+        var whKey=w.replace(/[^a-zA-Z0-9가-힣]/g,'');
+        var mgr=allMgr?allMgr[key+'_'+whKey]||allMgr[ymd.replace(/-/g,'')+'_'+whKey]:null;
+        if(mgr){
+          var m=calcMetrics(out,mgr,w);
+          if(m){
+            if(m.pickEff!==null)pickEffByWh[w].push(m.pickEff);
+            if(m.packEff!==null)packEffByWh[w].push(m.packEff);
+          }
+        }
+      });
+    });
+  }
+  var base={days:days, load:{}, pickEff:{}, packEff:{}, effSamples:{}};
+  WHS.forEach(function(w){
+    var l=median(loadPctByWh[w]), pe=median(pickEffByWh[w]), pa=median(packEffByWh[w]);
+    base.load[w]=l!==null?Math.round(l*10)/10:null;
+    base.pickEff[w]=pe!==null?Math.round(pe*10)/10:null;
+    base.packEff[w]=pa!==null?Math.round(pa*10)/10:null;
+    base.effSamples[w]=pickEffByWh[w].length;
+  });
+  baselineCache=base;
+  return base;
+}
+
+var wlMode='total'; // 'total' | 'split'
+function setWlMode(m, btn){
+  wlMode=m;
+  document.querySelectorAll('.wlmode-chip').forEach(function(b){
+    b.classList.remove('on'); b.style.background='var(--surface)'; b.style.color='var(--ink)';
+  });
+  btn.classList.add('on'); btn.style.background='var(--ink)'; btn.style.color='var(--bg)';
+  refreshWorkload();
 }
 async function refreshWorkload(){
   var el=document.getElementById('workload-block'); if(!el)return;
@@ -1129,7 +1265,8 @@ async function refreshWorkload(){
   WHS.forEach(function(wh){
     var s=acc[wh];
     if(s&&s.score>0){
-      data.push({wh:wh, score:s.score, total:s.total, multi:s.multi, single:s.single,
+      data.push({wh:wh, score:s.score, pickLoad:Math.round(s.pickLoad), packLoad:Math.round(s.packLoad),
+                 total:s.total, multi:s.multi, single:s.single,
                  multiRatio:s.total>0?Math.round(s.multi/s.total*100):0});
     }
   });
@@ -1149,14 +1286,33 @@ async function refreshWorkload(){
   summary+='<p style="font-size:22px;font-weight:700;color:var(--ink);">'+WH_LABELS[top.wh]+' <span style="color:'+(top.load>=50?'var(--neg)':'var(--blue)')+';">'+top.load+'%</span> <span style="font-size:13px;font-weight:400;color:var(--ink-3);">전체 작업 부하 감당</span></p>';
   summary+='</div>';
   var bars='<div style="display:flex;flex-direction:column;gap:10px;">';
-  data.forEach(function(d,i){
-    var col=palette[i%palette.length];
-    var barW=maxLoad>0?Math.round(d.load/maxLoad*100):0;
-    bars+='<div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">';
-    bars+='<span style="font-size:13px;font-weight:600;color:var(--ink);">'+WH_LABELS[d.wh]+' <span style="font-size:16px;font-weight:700;">'+d.load+'%</span></span>';
-    bars+='<span style="font-size:11px;color:var(--ink-3);">주문 '+d.total.toLocaleString()+'건 · 합포장 '+d.multiRatio+'% · 가중작업량 '+d.score.toLocaleString()+'</span></div>';
-    bars+='<div style="height:14px;background:var(--line);border-radius:7px;overflow:hidden;"><div style="height:100%;width:'+barW+'%;background:'+col+';border-radius:7px;transition:width .5s;"></div></div></div>';
-  });
+  if(wlMode==='split'){
+    // 피킹/포장 부하를 누적 막대로 (한 막대 안에 피킹+포장 색 구분)
+    var maxCombined=Math.max.apply(null, data.map(function(d){return d.pickLoad+d.packLoad;}));
+    data.forEach(function(d){
+      var combined=d.pickLoad+d.packLoad;
+      var pickW=maxCombined>0?Math.round(d.pickLoad/maxCombined*100):0;
+      var packW=maxCombined>0?Math.round(d.packLoad/maxCombined*100):0;
+      bars+='<div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">';
+      bars+='<span style="font-size:13px;font-weight:600;color:var(--ink);">'+WH_LABELS[d.wh]+'</span>';
+      bars+='<span style="font-size:11px;color:var(--ink-3);">피킹부하 '+d.pickLoad.toLocaleString()+' · 포장부하 '+d.packLoad.toLocaleString()+'</span></div>';
+      bars+='<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line);">';
+      bars+='<div style="height:100%;width:'+pickW+'%;background:#2563eb;" title="피킹"></div>';
+      bars+='<div style="height:100%;width:'+packW+'%;background:#ea580c;" title="포장"></div></div></div>';
+    });
+    bars+='<div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--ink-3);">';
+    bars+='<span><span style="display:inline-block;width:10px;height:10px;background:#2563eb;border-radius:2px;margin-right:4px;"></span>피킹 부하</span>';
+    bars+='<span><span style="display:inline-block;width:10px;height:10px;background:#ea580c;border-radius:2px;margin-right:4px;"></span>포장 부하 (송장만 붙는 창고는 낮음)</span></div>';
+  } else {
+    data.forEach(function(d,i){
+      var col=palette[i%palette.length];
+      var barW=maxLoad>0?Math.round(d.load/maxLoad*100):0;
+      bars+='<div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">';
+      bars+='<span style="font-size:13px;font-weight:600;color:var(--ink);">'+WH_LABELS[d.wh]+' <span style="font-size:16px;font-weight:700;">'+d.load+'%</span></span>';
+      bars+='<span style="font-size:11px;color:var(--ink-3);">주문 '+d.total.toLocaleString()+'건 · 합포장 '+d.multiRatio+'% · 부하량 '+d.score.toLocaleString()+'</span></div>';
+      bars+='<div style="height:14px;background:var(--line);border-radius:7px;overflow:hidden;"><div style="height:100%;width:'+barW+'%;background:'+col+';border-radius:7px;transition:width .5s;"></div></div></div>';
+    });
+  }
   bars+='</div>';
   el.innerHTML=summary+bars;
 }
@@ -1190,7 +1346,9 @@ function calcMetrics(out,mgr,wh){
   var single=out&&out.stats&&out.stats[wh]?out.stats[wh].single:null;
   var multi=out&&out.stats&&out.stats[wh]?out.stats[wh].multi:null;
   var pickEff=score!==null&&totalPickH>0?Math.round(score/totalPickH*10)/10:null;
-  var packEff=outTotal!==null&&packH>0?Math.round(outTotal/packH*10)/10:null;
+  var packRatio=PACK_RATIO[wh]!==undefined?PACK_RATIO[wh]:1.0;
+  var packTarget=outTotal!==null?Math.round(outTotal*packRatio):null; // 실제 포장 대상 건수
+  var packEff=packTarget!==null&&packH>0?Math.round(packTarget/packH*10)/10:null;
   var dep=totalPickH>0?Math.round(pickH/totalPickH*100):null;
   var bundleRatio=outTotal&&outTotal>0?Math.round(multi/outTotal*100):null;
   var avgBundle=multi&&multi>0?Math.round(((score||0)-(single||0))/multi*10)/10:null;
@@ -1198,7 +1356,7 @@ function calcMetrics(out,mgr,wh){
   var minPerPallet=pallet>0&&grossH>0?Math.round(grossH*60/pallet):null;
   var returnCount=mgr.returnCount||0,returnH=mgr.returnHours||0;
   var returnEff=returnCount>0&&returnH>0?Math.round(returnCount/returnH*10)/10:null;
-  return{pickEff,packEff,dep,score,outTotal,single,multi,staffH,pickH,packH,grossH,pallet,totalPickH,totalOutH,bundleRatio,avgBundle,grossPerH,minPerPallet,returnCount,returnH,returnEff};
+  return{pickEff,packEff,dep,score,outTotal,single,multi,staffH,pickH,packH,grossH,pallet,totalPickH,totalOutH,bundleRatio,avgBundle,grossPerH,minPerPallet,returnCount,returnH,returnEff,packTarget,packRatio};
 }
 
 // Period filter
@@ -1297,6 +1455,8 @@ async function refreshDashboard(){
 
   // ⚖️ 창고 부하 현황 (기간 합산)
   refreshWorkload();
+  // 🧭 창고 진단 (부하 × 효율)
+  refreshDiagnosis(out, mgrData);
 
   // Insights
   var insights=buildInsights(mgrData,out);
@@ -1326,7 +1486,7 @@ async function refreshDashboard(){
       pes.textContent=m.score!==null?'가중 라인수 '+m.score+' / 피킹 '+m.totalPickH+'h':'엑셀 미업로드';
       pa.textContent=m.packEff!==null?m.packEff+'/h':'—';
       pa.style.color=m.packEff!==null?packC[wh]:'var(--ink-3)';
-      pas.textContent=m.outTotal!==null?'출고 '+m.outTotal+'건 / 포장 '+m.packH+'h':m.packH>0?'엑셀 미업로드':'포장알바 미입력';
+      pas.textContent=m.packTarget!==null?'포장대상 '+m.packTarget+'건 / 포장 '+m.packH+'h'+(m.packRatio<1?' (송장만 제외)':''):m.packH>0?'엑셀 미업로드':'포장알바 미입력';
       de.textContent=m.dep!==null?m.dep+'%':'—';
       de.style.color=m.dep!==null?depC[wh]:'var(--ink-3)';
       des.textContent='직원 '+m.staffH+'h / 피킹알바 '+m.pickH+'h';
