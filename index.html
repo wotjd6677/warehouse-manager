@@ -397,6 +397,20 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
     </div>
   </div>
 
+  <!-- 누락 날짜 점검 -->
+  <div class="card" style="border-left:3px solid var(--warn,#d9822b)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+      <span style="font-weight:700">🔎 매니저 입력 누락 점검</span>
+      <span style="font-size:11px;color:var(--ink-2)">기간</span>
+      <input type="date" id="miss-from" style="width:140px">
+      <span style="font-size:11px;color:var(--ink-2)">~</span>
+      <input type="date" id="miss-to" style="width:140px">
+      <button onclick="checkMissing()" style="font-size:12px;padding:6px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);cursor:pointer;font-family:inherit;color:var(--ink)">점검</button>
+      <span style="font-size:11px;color:var(--ink-3)">(토요일 제외)</span>
+    </div>
+    <div id="miss-result"><p style="font-size:12px;color:var(--ink-3)">기간을 확인하고 [점검]을 누르세요. 창고별로 입력이 빠진 날짜를 찾아줍니다.</p></div>
+  </div>
+
   <!-- 자동 인사이트 -->
   <div id="insights-row" class="insights-row" style="display:none;"></div>
 
@@ -639,7 +653,7 @@ function showTab(t){
   document.getElementById('tab-manager').classList.toggle('active',t==='manager');
   document.getElementById('tab-dashboard').classList.toggle('active',t==='dashboard');
   document.getElementById('tab-cs').classList.toggle('active',t==='cs');
-  if(t==='dashboard')refreshDashboard();
+  if(t==='dashboard'){refreshDashboard();_initMissRange();}
   if(t==='cs')loadCSData();
 }
 
@@ -836,18 +850,62 @@ function calcOutbound(rows){
 
 async function handleExcel(input){
   var file=input.files[0];if(!file)return;
-  var date=document.getElementById('d-date').value;
-  if(!date){showToast('날짜를 먼저 선택해주세요.');return;}
+  var fallbackDate=document.getElementById('d-date').value;
   var reader=new FileReader();
   reader.onload=async function(ev){
     try{
       var wb=XLSX.read(ev.target.result,{type:'array'});
       var ws=wb.Sheets[wb.SheetNames[0]];
       var data=XLSX.utils.sheet_to_json(ws,{defval:''});
-      var stats=calcOutbound(data);
-      await window.dbSet('out/'+date.replace(/-/g,''),{date,stats,total:data.length});
+      if(!data.length){showToast('데이터가 없습니다.');return;}
+
+      // 날짜 컬럼 자동 탐지 (송장등록일자 우선, 없으면 유사 컬럼)
+      var keys=Object.keys(data[0]||{});
+      var dateKey=keys.find(function(k){return k.indexOf('송장등록일자')>=0;})
+        ||keys.find(function(k){return /일자|날짜|출고일|주문일/.test(k);});
+
+      // 날짜 정규화 (YYYY-MM-DD)
+      function normDate(v){
+        if(v==null||v==='')return '';
+        if(v instanceof Date){var y=v.getFullYear(),m=('0'+(v.getMonth()+1)).slice(-2),d=('0'+v.getDate()).slice(-2);return y+'-'+m+'-'+d;}
+        var s=String(v).trim();
+        var mm=s.match(/(\d{4})[-.\/년\s]*(\d{1,2})[-.\/월\s]*(\d{1,2})/);
+        if(mm){return mm[1]+'-'+('0'+mm[2]).slice(-2)+'-'+('0'+mm[3]).slice(-2);}
+        return '';
+      }
+
+      // 날짜별로 행 그룹핑
+      var groups={};
+      if(dateKey){
+        data.forEach(function(r){
+          var ds=normDate(r[dateKey]);
+          if(!ds)ds=fallbackDate||'미지정';
+          (groups[ds]=groups[ds]||[]).push(r);
+        });
+      }else{
+        // 날짜 컬럼이 없으면 기존 방식(화면에서 고른 날짜 하나)
+        if(!fallbackDate){showToast('날짜 컬럼이 없어 상단에서 날짜를 먼저 선택해주세요.');return;}
+        groups[fallbackDate]=data;
+      }
+
+      var dates=Object.keys(groups).filter(function(d){return d && d!=='미지정';}).sort();
+      if(!dates.length){showToast('처리할 날짜를 찾지 못했습니다.');return;}
+
+      // 각 날짜별로 집계 후 저장 (덮어쓰기)
+      var done=0, totalRows=0;
+      for(var i=0;i<dates.length;i++){
+        var dt=dates[i];
+        var rows=groups[dt];
+        var stats=calcOutbound(rows);
+        await window.dbSet('out/'+dt.replace(/-/g,''),{date:dt,stats:stats,total:rows.length});
+        done++; totalRows+=rows.length;
+      }
       allOutCache=null;
-      showToast('엑셀 집계 완료!');refreshDashboard();
+      // 처리한 마지막(최신) 날짜로 화면 이동
+      var last=dates[dates.length-1];
+      var di=document.getElementById('d-date'); if(di)di.value=last;
+      showToast('✅ '+done+'개 날짜 · '+totalRows+'행 집계 완료 ('+dates[0]+(dates.length>1?' ~ '+last:'')+')');
+      refreshDashboard();
     }catch(e){showToast('파일 읽기 오류: '+e.message);}
   };
   reader.readAsArrayBuffer(file);input.value='';
@@ -858,6 +916,78 @@ async function getMgr(date,wh){
 }
 async function getOut(date){
   try{return await window.dbGet('out/'+date.replace(/-/g,''));}catch(e){}return null;
+}
+
+// ===== 🔎 매니저 입력 누락 점검 (창고별, 토요일 제외) =====
+function _initMissRange(){
+  var pad=function(n){return('0'+n).slice(-2);};
+  var d=new Date();
+  var first=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-01';
+  var tod=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  var f=document.getElementById('miss-from'), t=document.getElementById('miss-to');
+  if(f&&!f.value)f.value=first;
+  if(t&&!t.value)t.value=tod;
+}
+async function checkMissing(){
+  var pad=function(n){return('0'+n).slice(-2);};
+  var fromStr=document.getElementById('miss-from').value;
+  var toStr=document.getElementById('miss-to').value;
+  if(!fromStr||!toStr){showToast('기간을 선택하세요.');return;}
+  var res=document.getElementById('miss-result');
+  res.innerHTML='<p style="font-size:12px;color:var(--ink-3)">점검 중...</p>';
+
+  // 기간 내 날짜 목록 (토요일 제외)
+  var days=[];
+  var cur=new Date(fromStr+'T00:00:00'), end=new Date(toStr+'T00:00:00');
+  while(cur<=end){
+    if(cur.getDay()!==6){ // 6=토요일 제외
+      days.push(cur.getFullYear()+'-'+pad(cur.getMonth()+1)+'-'+pad(cur.getDate()));
+    }
+    cur.setDate(cur.getDate()+1);
+  }
+  if(!days.length){res.innerHTML='<p style="font-size:12px;color:var(--ink-3)">점검할 날짜가 없습니다.</p>';return;}
+
+  // 창고별로 각 날짜 입력 여부 확인
+  var missingByWh={};
+  for(var w=0;w<WHS.length;w++){
+    var wh=WHS[w]; missingByWh[wh]=[];
+    for(var i=0;i<days.length;i++){
+      var m=await getMgr(days[i],wh);
+      if(!m)missingByWh[wh].push(days[i]);
+    }
+  }
+
+  // 결과 렌더
+  var anyMiss=WHS.some(function(wh){return missingByWh[wh].length>0;});
+  if(!anyMiss){
+    res.innerHTML='<p style="font-size:13px;color:var(--pos,#16a34a);font-weight:600">✅ 누락 없음 — 모든 창고가 기간 내 전부 입력됐습니다.</p>';
+    return;
+  }
+  var html='';
+  WHS.forEach(function(wh){
+    var miss=missingByWh[wh];
+    if(!miss.length){
+      html+='<div style="margin-bottom:8px"><span style="font-weight:600">'+WH_LABELS[wh]+'</span> <span style="color:var(--pos,#16a34a);font-size:12px">✅ 누락 없음</span></div>';
+      return;
+    }
+    html+='<div style="margin-bottom:10px">';
+    html+='<div style="font-weight:600;margin-bottom:4px">'+WH_LABELS[wh]+' <span style="color:var(--warn,#d9822b);font-size:12px">— '+miss.length+'일 누락</span></div>';
+    html+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
+    miss.forEach(function(dt){
+      html+='<button onclick="goInput(\''+dt+'\',\''+wh+'\')" style="font-size:12px;padding:4px 10px;border:1px solid var(--warn,#d9822b);border-radius:6px;background:var(--surface);color:var(--ink);cursor:pointer" title="이 날짜·창고로 입력하러 가기">'+dt.slice(5)+' ✏</button>';
+    });
+    html+='</div></div>';
+  });
+  res.innerHTML=html;
+}
+// 누락 날짜 클릭 → 매니저 입력 탭으로 이동하며 날짜·창고 자동 세팅
+function goInput(dateStr, wh){
+  showTab('manager');
+  var wsel=document.getElementById('m-wh'), dinp=document.getElementById('m-date');
+  if(wsel){wsel.value=wh; if(typeof updateWhView==='function')updateWhView();}
+  if(dinp)dinp.value=dateStr;
+  showToast('📝 '+WH_LABELS[wh]+' · '+dateStr+' 입력 화면으로 이동했습니다.');
+  window.scrollTo(0,0);
 }
 
 function calcMetrics(out,mgr,wh){
