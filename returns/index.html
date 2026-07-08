@@ -386,9 +386,17 @@ function pEnsureOpen(wh,t){
   openPallet[wh]=id;
   return id;
 }
+// 파레트 물리 구분: 상품약어(a) 기준 3그룹 (실물 창고 단위)
+//  · 빈값/nan/1hb/1pr → 1창고   · 2창고/신창고/신hb → 2창고   · 3hb/3창고/3pr/케리프 → 3창고
+function palletGrp(a){
+  const s=String(a||'').trim().toLowerCase();
+  if(s==='2창고'||s==='신창고'||s==='신hb')return '2창고';
+  if(s==='3hb'||s==='3창고'||s==='3pr'||s==='케리프')return '3창고';
+  return '1창고'; // 빈값/nan/1hb/1pr 및 그 외 기본
+}
 function pAdd(it,qty,inv,t){
-  const wh=it.w||'미지정';const pid=pEnsureOpen(wh,t);
-  palletLog[pid].items.push({i:it.i,o:it.o,b:it.b,w:wh,a:it.a||'',p:it.p||'',qty,inv,t});
+  const wh=palletGrp(it.a);const pid=pEnsureOpen(wh,t);   // 파레트는 3그룹으로 묶어 저장
+  palletLog[pid].items.push({i:it.i,o:it.o,b:it.b,w:it.w,a:it.a||'',p:it.p||'',qty,inv,t});
   return pid;
 }
 function pClose(pid,t){
@@ -1089,16 +1097,17 @@ function exportPalletExcel(pid){
   const rows=palletAggRows(pid);
   if(!rows.length){showToast('파레트가 비어있습니다',1);return;}
   const wb=XLSX.utils.book_new();
+  // 재고 라벨: 3창고 제품은 사방넷상 2창고 재고로 잡히므로 파일/시트명은 2창고로 표시 (파일 자체는 파레트 단위로 분리 저장)
+  const stockLabel=(p.wh==='3창고')?'2창고':p.wh;
   // 사방넷 업로드용 시트 (상품코드 있는 것만 makeSabangSheet 내부에서 거름)
-  const label=pid;   // 시트/파일명에 파레트ID 그대로
-  XLSX.utils.book_append_sheet(wb,makeSabangSheet(rows,p.wh+' '+pid),'사방넷_'+p.wh);
+  XLSX.utils.book_append_sheet(wb,makeSabangSheet(rows,stockLabel+' '+pid),'사방넷_'+stockLabel);
   // 파레트 전체내역 시트 (붙이는 라벨/대조용 — 상품코드 없는 것도 포함)
   const aoa=[['파레트 '+pid+' 입고내역 · '+p.wh+' · 적재 '+p.items.length+'건','','','',''],
     ['품목','옵션','창고','상품코드','수량']];
   rows.forEach(r=>aoa.push([r.i,r.o,r.w,r.p,r.qty]));
   const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:42},{wch:24},{wch:10},{wch:16},{wch:8}];
   XLSX.utils.book_append_sheet(wb,ws,'파레트내역');
-  XLSX.writeFile(wb,'파레트_'+pid+'_'+nowTs()+'.xlsx');
+  XLSX.writeFile(wb,'입고_'+stockLabel+'_'+pid+'_'+nowTs()+'.xlsx');
 }
 
 // ── 파레트 내역 종이 인쇄 (품목 / 옵션 / 수량 목록 1장) ──
