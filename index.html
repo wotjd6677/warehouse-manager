@@ -381,7 +381,10 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
   <div class="period-bar">
     <div style="display:flex;align-items:center;gap:8px;">
       <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);">날짜</span>
-      <input type="date" id="d-date" style="width:150px;">
+      <button id="d-prev" onclick="stepDate(-1)" title="이전 데이터 날짜" style="width:30px;height:32px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);cursor:pointer;color:var(--ink);font-size:14px;">◀</button>
+      <select id="d-date-sel" onchange="pickDate(this.value)" style="height:32px;min-width:150px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font-family:inherit;font-size:14px;padding:0 8px;cursor:pointer;"></select>
+      <button id="d-next" onclick="stepDate(1)" title="다음 데이터 날짜" style="width:30px;height:32px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);cursor:pointer;color:var(--ink);font-size:14px;">▶</button>
+      <input type="date" id="d-date" style="display:none;">
     </div>
     <div style="display:flex;gap:6px;">
       <button class="period-chip on" data-range="day" onclick="setPeriod('day',this)">일별</button>
@@ -413,6 +416,15 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
 
   <!-- 자동 인사이트 -->
   <div id="insights-row" class="insights-row" style="display:none;"></div>
+
+  <!-- 창고 부하 현황 (주문 데이터 자동 집계) -->
+  <div class="section-header">
+    <span class="section-title">⚖️ 창고 부하 현황</span>
+    <span class="section-desc">주문 물량·합포장 기반 · 어느 창고가 가장 많은 일을 감당하는지</span>
+  </div>
+  <div id="workload-block" style="margin-bottom:20px;">
+    <p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">주문 엑셀을 업로드하면 표시됩니다.</p>
+  </div>
 
   <!-- 피킹 효율 -->
   <div class="section-header">
@@ -474,16 +486,13 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
     <div class="metric-card"><p class="wh-label">3창고</p><p class="value" id="gross3">—</p><p class="sub" id="gross3s">데이터 없음</p></div>
   </div>
 
-  <!-- 반품 처리 효율 -->
+  <!-- 반품 현황 (반품도구 자동 연동) -->
   <div class="section-header">
-    <span class="section-title">반품 처리 효율</span>
-    <span class="section-desc">3창고 반품 건수 ÷ 반품 알바 투입시간</span>
+    <span class="section-title">📦 반품 현황</span>
+    <span class="section-desc">반품 양품화 도구에서 자동 집계 · 처리 = 입고+폐기+기부 (공간 회수 기준)</span>
   </div>
-  <div class="metrics-grid" style="margin-bottom:16px;">
-    <div class="metric-card"><p class="wh-label">1창고</p><p class="value" style="color:var(--ink-3);">—</p><p class="sub">해당 없음</p></div>
-    <div class="metric-card"><p class="wh-label">2창고</p><p class="value" style="color:var(--ink-3);">—</p><p class="sub">해당 없음</p></div>
-    <div class="metric-card"><p class="wh-label">3창고</p><p class="value" id="ret3">—</p><p class="sub" id="ret3s">데이터 없음</p></div>
-    <div class="metric-card" style="opacity:.3;pointer-events:none;"></div>
+  <div id="returns-block" style="margin-bottom:16px;">
+    <p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">반품 데이터를 불러오는 중…</p>
   </div>
 
   <!-- 파레트랙 -->
@@ -653,7 +662,7 @@ function showTab(t){
   document.getElementById('tab-manager').classList.toggle('active',t==='manager');
   document.getElementById('tab-dashboard').classList.toggle('active',t==='dashboard');
   document.getElementById('tab-cs').classList.toggle('active',t==='cs');
-  if(t==='dashboard'){refreshDashboard();_initMissRange();}
+  if(t==='dashboard'){loadAvailDates().then(refreshDashboard);_initMissRange();}
   if(t==='cs')loadCSData();
 }
 
@@ -806,7 +815,18 @@ function whGroup(b,cat){
   if(['3창고','도착보장3','3HB','3PR'].indexOf(b)>=0)return '3창고';
   return b;
 }
-function bundleWeight(size){if(size===1)return 1.0;if(size===2)return 1.5;if(size===3)return 1.65;return 1.8;}
+// 합포장 가중치: 단건=1, 2개=1.8, 3개=2.5 (확정)
+// 4개 이상은 가속 증가 — 개수가 많아질수록 한 개 추가 부담이 커짐
+//   증가폭: 3→4 +0.50, 4→5 +0.55, 5→6 +0.60 … (매번 +0.05씩 증가폭 확대)
+function bundleWeight(size){
+  var s=parseInt(size)||1;
+  if(s<=1)return 1.0;
+  if(s===2)return 1.8;
+  if(s===3)return 2.5;
+  var v=2.5,step=0.5;
+  for(var k=4;k<=s;k++){v+=step;step+=0.05;}
+  return Math.round(v*100)/100;
+}
 
 function calcOutbound(rows){
   var hasBlank={},has2C={},phoneKeys=[],cats=[];
@@ -905,7 +925,7 @@ async function handleExcel(input){
       var last=dates[dates.length-1];
       var di=document.getElementById('d-date'); if(di)di.value=last;
       showToast('✅ '+done+'개 날짜 · '+totalRows+'행 집계 완료 ('+dates[0]+(dates.length>1?' ~ '+last:'')+')');
-      refreshDashboard();
+      loadAvailDates().then(refreshDashboard);
     }catch(e){showToast('파일 읽기 오류: '+e.message);}
   };
   reader.readAsArrayBuffer(file);input.value='';
@@ -990,6 +1010,132 @@ function goInput(dateStr, wh){
   window.scrollTo(0,0);
 }
 
+// ===== 📦 반품 현황 (반품도구 returns/scanLog 자동 연동) =====
+// 반품도구 창고(w) → 물리 3그룹
+function retGrp(w){
+  var s=String(w||'').trim().toLowerCase();
+  if(s.indexOf('2창고')>=0||s.indexOf('신창고')>=0||s.indexOf('신hb')>=0)return '2창고';
+  if(s.indexOf('3')>=0||s.indexOf('케리프')>=0)return '3창고';
+  return '1창고';
+}
+function retIsDonate(reason){ return String(reason||'').indexOf('기부')>=0; }
+// scanLog 전체 → 특정 날짜(YYYY-MM-DD) 창고별 집계
+function aggReturns(scanLog, ymd){
+  var dayStart=new Date(ymd+'T00:00:00').getTime(), dayEnd=dayStart+86400000;
+  var res={'1창고':{inbound:0,dispose:0,donate:0},'2창고':{inbound:0,dispose:0,donate:0},'3창고':{inbound:0,dispose:0,donate:0}};
+  Object.values(scanLog||{}).forEach(function(s){
+    var when=s.dt||s.t||0; if(when<dayStart||when>=dayEnd)return;
+    (s.items||[]).forEach(function(it){
+      var g=retGrp(it.w), inQ=it.inQ||0;
+      if(inQ>0)res[g].inbound+=inQ;
+      var rejs=it.rejs||{};
+      Object.keys(rejs).forEach(function(reason){
+        var q=rejs[reason]||0; if(q<=0)return;
+        if(retIsDonate(reason))res[g].donate+=q; else res[g].dispose+=q;
+      });
+    });
+  });
+  Object.keys(res).forEach(function(g){
+    var r=res[g]; r.handled=r.inbound+r.dispose+r.donate;
+    r.disposeRate=r.handled>0?Math.round(r.dispose/r.handled*100):null;
+  });
+  return res;
+}
+async function refreshReturns(date){
+  var el=document.getElementById('returns-block'); if(!el)return;
+  var scanLog=null;
+  try{ scanLog=await window.dbGet('returns/scanLog'); }catch(e){}
+  if(!scanLog){ el.innerHTML='<p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">반품 데이터가 없습니다. (반품 도구에서 처리 시 자동 표시)</p>'; return; }
+  var agg=aggReturns(scanLog, date);
+  var order=['1창고','2창고','3창고'];
+  var totHandled=order.reduce(function(a,g){return a+agg[g].handled;},0);
+  // 요약 배너 + 창고별 카드 (색신호: 폐기율 높으면 빨강, 처리 있으면 정상)
+  var summary='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;">';
+  var totIn=order.reduce(function(a,g){return a+agg[g].inbound;},0);
+  var totDis=order.reduce(function(a,g){return a+agg[g].dispose;},0);
+  var totDon=order.reduce(function(a,g){return a+agg[g].donate;},0);
+  var totRate=totHandled>0?Math.round(totDis/totHandled*100):0;
+  summary+='<div style="flex:1;min-width:140px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:12px 14px;"><p style="font-size:11px;color:var(--ink-3);margin-bottom:4px;">오늘 처리 (공간 회수)</p><p style="font-size:22px;font-weight:700;color:var(--ink);">'+totHandled+'<span style="font-size:13px;font-weight:400;color:var(--ink-3);"> 건</span></p><p style="font-size:11px;color:var(--ink-3);margin-top:2px;">입고 '+totIn+' · 폐기 '+totDis+' · 기부 '+totDon+'</p></div>';
+  var rateColor=totRate>=40?'var(--neg)':totRate>=25?'var(--warn)':'var(--blue)';
+  summary+='<div style="flex:1;min-width:140px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:12px 14px;"><p style="font-size:11px;color:var(--ink-3);margin-bottom:4px;">폐기율</p><p style="font-size:22px;font-weight:700;color:'+rateColor+';">'+totRate+'<span style="font-size:13px;font-weight:400;">%</span></p><p style="font-size:11px;color:var(--ink-3);margin-top:2px;">'+(totRate>=40?'폐기 비중 높음':totRate>=25?'주의':'양호')+'</p></div>';
+  summary+='</div>';
+  // 창고별 상세 카드
+  var cards='<div class="metrics-grid">';
+  order.forEach(function(g){
+    var r=agg[g];
+    if(r.handled===0){ cards+='<div class="metric-card"><p class="wh-label">'+g+'</p><p class="value" style="color:var(--ink-3);">—</p><p class="sub">처리 없음</p></div>'; return; }
+    var dr=r.disposeRate;
+    var drColor=dr>=40?'var(--neg)':dr>=25?'var(--warn)':'var(--ink)';
+    cards+='<div class="metric-card"><p class="wh-label">'+g+'</p>'+
+      '<p class="value">'+r.handled+'<span style="font-size:12px;font-weight:400;color:var(--ink-3);"> 건</span></p>'+
+      '<p class="sub">입고 '+r.inbound+' · 폐기 <span style="color:'+drColor+';font-weight:600;">'+r.dispose+'</span> · 기부 '+r.donate+'</p></div>';
+  });
+  cards+='<div class="metric-card" style="opacity:.3;pointer-events:none;"></div>';
+  cards+='</div>';
+  el.innerHTML=summary+cards;
+}
+
+// ===== ⚖️ 창고 부하 현황 (주문 stats 기반) =====
+function renderWorkload(out){
+  var el=document.getElementById('workload-block'); if(!el)return;
+  if(!out||!out.stats){ el.innerHTML='<p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">주문 엑셀을 업로드하면 표시됩니다.</p>'; return; }
+  var data=[];
+  WHS.forEach(function(wh){
+    var s=out.stats[wh];
+    if(s&&s.score>0){
+      var multiRatio=s.total>0?Math.round(s.multi/s.total*100):0;
+      data.push({wh:wh, score:s.score, total:s.total, multi:s.multi, single:s.single, multiRatio:multiRatio});
+    }
+  });
+  if(data.length===0){ el.innerHTML='<p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">집계된 주문 데이터가 없습니다.</p>'; return; }
+  var totScore=data.reduce(function(a,d){return a+d.score;},0);
+  data.forEach(function(d){ d.load=totScore>0?Math.round(d.score/totScore*1000)/10:0; });
+  data.sort(function(a,b){return b.load-a.load;}); // 부하 큰 순
+  var maxLoad=data[0].load;
+  var palette=['#2563eb','#0891b2','#7c3aed','#c026d3','#ea580c'];
+  // 요약 배너: 최대 부하 창고 강조
+  var top=data[0];
+  var summary='<div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:14px 16px;margin-bottom:14px;">';
+  summary+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">';
+  summary+='<span style="font-size:12px;color:var(--ink-3);">가장 부하가 큰 창고</span>';
+  summary+='<span style="font-size:12px;color:var(--ink-3);">총 주문 '+data.reduce(function(a,d){return a+d.total;},0).toLocaleString()+'건</span></div>';
+  summary+='<p style="font-size:22px;font-weight:700;color:var(--ink);">'+WH_LABELS[top.wh]+' <span style="color:'+(top.load>=50?'var(--neg)':'var(--blue)')+';">'+top.load+'%</span> <span style="font-size:13px;font-weight:400;color:var(--ink-3);">전체 작업 부하 감당</span></p>';
+  summary+='</div>';
+  // 창고별 부하 막대
+  var bars='<div style="display:flex;flex-direction:column;gap:10px;">';
+  data.forEach(function(d,i){
+    var col=palette[i%palette.length];
+    var barW=maxLoad>0?Math.round(d.load/maxLoad*100):0;
+    bars+='<div>';
+    bars+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">';
+    bars+='<span style="font-size:13px;font-weight:600;color:var(--ink);">'+WH_LABELS[d.wh]+' <span style="font-size:16px;font-weight:700;">'+d.load+'%</span></span>';
+    bars+='<span style="font-size:11px;color:var(--ink-3);">주문 '+d.total.toLocaleString()+'건 · 합포장 '+d.multiRatio+'% · 가중작업량 '+d.score.toLocaleString()+'</span></div>';
+    bars+='<div style="height:14px;background:var(--line);border-radius:7px;overflow:hidden;"><div style="height:100%;width:'+barW+'%;background:'+col+';border-radius:7px;transition:width .5s;"></div></div>';
+    bars+='</div>';
+  });
+  bars+='</div>';
+  el.innerHTML=summary+bars;
+}
+
+// ===== 창고 상대비교 색신호 =====
+// vals: {wh: 값(null 가능)}, higherBetter: true면 최고=초록·최저=빨강, false면 반대(알바의존도)
+// 반환: {wh: color} — 값 있는 창고가 2개 미만이면 색 안 칠함(기본색)
+function relColors(vals, higherBetter){
+  var GOOD='var(--pos,#16a34a)', BAD='var(--neg,#dc2626)', MID='var(--ink)';
+  var entries=Object.keys(vals).filter(function(w){return vals[w]!==null&&vals[w]!==undefined;});
+  var out={}; Object.keys(vals).forEach(function(w){out[w]=MID;});
+  if(entries.length<2)return out; // 비교 대상 부족
+  var nums=entries.map(function(w){return vals[w];});
+  var mn=Math.min.apply(null,nums), mx=Math.max.apply(null,nums);
+  if(mn===mx)return out; // 전부 동일하면 색 없음
+  entries.forEach(function(w){
+    var v=vals[w];
+    if(v===mx)out[w]=higherBetter?GOOD:BAD;
+    else if(v===mn)out[w]=higherBetter?BAD:GOOD;
+  });
+  return out;
+}
+
 function calcMetrics(out,mgr,wh){
   if(!mgr)return null;
   var staffH=mgr.staffHours||0,pickH=mgr.pickHours||0,packH=mgr.packHours||0;
@@ -1054,12 +1200,59 @@ function buildInsights(mgrData, out){
   return insights.slice(0,3);
 }
 
+// ===== 데이터 있는 날짜 드롭박스 + ◀▶ 이동 =====
+var availDates=[]; // ['2026-07-08', ...] 최신순
+function fmtDateKey(k){ // '20260708' → '2026-07-08'
+  var s=String(k); if(s.length===8)return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8); return s;
+}
+async function loadAvailDates(){
+  var set={};
+  try{ var o=await window.dbGet('out'); if(o)Object.keys(o).forEach(function(k){set[fmtDateKey(k)]=1;}); }catch(e){}
+  try{ var m=await window.dbGet('mgr'); if(m)Object.keys(m).forEach(function(k){var d=String(k).split('_')[0]; set[fmtDateKey(d)]=1;}); }catch(e){}
+  availDates=Object.keys(set).filter(function(d){return /^\d{4}-\d{2}-\d{2}$/.test(d);}).sort().reverse(); // 최신 먼저
+  var sel=document.getElementById('d-date-sel'); if(!sel)return;
+  if(availDates.length===0){ sel.innerHTML='<option value="">데이터 없음</option>'; return; }
+  sel.innerHTML=availDates.map(function(d){return '<option value="'+d+'">'+d+'</option>';}).join('');
+  // 현재 d-date가 목록에 있으면 유지, 없으면 최신으로
+  var cur=document.getElementById('d-date').value;
+  var use=availDates.indexOf(cur)>=0?cur:availDates[0];
+  document.getElementById('d-date').value=use; sel.value=use;
+  updateArrowState();
+}
+function updateArrowState(){
+  var cur=document.getElementById('d-date').value;
+  var i=availDates.indexOf(cur);
+  var prev=document.getElementById('d-prev'), next=document.getElementById('d-next');
+  // availDates는 최신순 → ◀(과거)는 i+1방향, ▶(최신)는 i-1방향
+  if(prev)prev.style.opacity=(i<availDates.length-1)?'1':'.35';
+  if(next)next.style.opacity=(i>0)?'1':'.35';
+}
+function pickDate(d){
+  if(!d)return;
+  document.getElementById('d-date').value=d;
+  var sel=document.getElementById('d-date-sel'); if(sel)sel.value=d;
+  updateArrowState();
+  refreshDashboard();
+}
+function stepDate(dir){ // dir=-1 이전(과거), +1 다음(최신)
+  var cur=document.getElementById('d-date').value;
+  var i=availDates.indexOf(cur);
+  if(i<0){ if(availDates.length)pickDate(availDates[0]); return; }
+  // 최신순 배열이라: 과거로(◀,dir=-1) = 인덱스 +1, 최신으로(▶,dir=+1) = 인덱스 -1
+  var ni=i-dir;
+  if(ni<0||ni>=availDates.length)return;
+  pickDate(availDates[ni]);
+}
+
 async function refreshDashboard(){
   if(!isFirebaseReady)return;
   var date=document.getElementById('d-date').value;if(!date)return;
   var out=await getOut(date);
   var mgrData={};
   for(var i=0;i<WHS.length;i++){var m=await getMgr(date,WHS[i]);if(m)mgrData[WHS[i]]=m;}
+
+  // ⚖️ 창고 부하 현황
+  renderWorkload(out);
 
   // Insights
   var insights=buildInsights(mgrData,out);
@@ -1071,21 +1264,29 @@ async function refreshDashboard(){
     }).join('');
   }else{insRow.style.display='none';}
 
-  // Metrics
+  // Metrics — 먼저 4창고 값 수집(색 비교용)
+  var mAll={}, pickV={}, packV={}, depV={};
   WHS.forEach(function(wh){
-    var id=WH_ID[wh];
-    var m=calcMetrics(out,mgrData[wh],wh);
+    var m=calcMetrics(out,mgrData[wh],wh); mAll[wh]=m;
+    pickV[wh]=m?m.pickEff:null; packV[wh]=m?m.packEff:null; depV[wh]=m?m.dep:null;
+  });
+  var pickC=relColors(pickV,true), packC=relColors(packV,true), depC=relColors(depV,false); // 의존도는 낮을수록 좋음
+  WHS.forEach(function(wh){
+    var id=WH_ID[wh], m=mAll[wh];
     var pe=document.getElementById('pick'+id),pes=document.getElementById('pick'+id+'s');
     var pa=document.getElementById('pack'+id),pas=document.getElementById('pack'+id+'s');
     var de=document.getElementById('dep'+id),des=document.getElementById('dep'+id+'s');
     if(pe&&m){
       pe.textContent=m.pickEff!==null?m.pickEff+'/h':'—';
-      pes.textContent=m.score!==null?'작업량 '+m.score+' / 피킹 '+m.totalPickH+'h':'엑셀 미업로드';
+      pe.style.color=m.pickEff!==null?pickC[wh]:'var(--ink-3)';
+      pes.textContent=m.score!==null?'가중 라인수 '+m.score+' / 피킹 '+m.totalPickH+'h':'엑셀 미업로드';
       pa.textContent=m.packEff!==null?m.packEff+'/h':'—';
+      pa.style.color=m.packEff!==null?packC[wh]:'var(--ink-3)';
       pas.textContent=m.outTotal!==null?'출고 '+m.outTotal+'건 / 포장 '+m.packH+'h':m.packH>0?'엑셀 미업로드':'포장알바 미입력';
       de.textContent=m.dep!==null?m.dep+'%':'—';
+      de.style.color=m.dep!==null?depC[wh]:'var(--ink-3)';
       des.textContent='직원 '+m.staffH+'h / 피킹알바 '+m.pickH+'h';
-    }else if(pe){pe.textContent='—';pes.textContent='데이터 없음';pa.textContent='—';pas.textContent='데이터 없음';de.textContent='—';des.textContent='데이터 없음';}
+    }else if(pe){pe.textContent='—';pe.style.color='var(--ink-3)';pes.textContent='데이터 없음';pa.textContent='—';pa.style.color='var(--ink-3)';pas.textContent='데이터 없음';de.textContent='—';de.style.color='var(--ink-3)';des.textContent='데이터 없음';}
   });
 
   WHS.forEach(function(wh){
@@ -1099,11 +1300,8 @@ async function refreshDashboard(){
     }
   });
 
-  var m3=calcMetrics(out,mgrData['3창고'],'3창고');
-  var r3=document.getElementById('ret3'),r3s=document.getElementById('ret3s');
-  if(m3&&m3.returnEff!==null){r3.textContent=m3.returnEff+'/h';r3s.textContent='반품 '+m3.returnCount+'건 / '+m3.returnH+'h';}
-  else if(m3&&m3.returnCount>0){r3.textContent=m3.returnCount+'건';r3s.textContent='반품알바 미입력';}
-  else{r3.textContent='—';r3s.textContent=m3?'반품 없음':'데이터 없음';}
+  // 📦 반품 현황 (반품도구 자동 집계)
+  refreshReturns(date);
 
   // Rack
   var rackHtml='';var hasRack=false;
