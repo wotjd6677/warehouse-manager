@@ -422,6 +422,11 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
     <span class="section-title">⚖️ 창고 부하 현황</span>
     <span class="section-desc">주문 물량·합포장 기반 · 어느 창고가 가장 많은 일을 감당하는지</span>
   </div>
+  <div style="display:flex;gap:6px;margin-bottom:10px;">
+    <button class="wl-chip on" data-wl="day" onclick="setWlPeriod('day',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--ink);color:var(--bg);cursor:pointer;font-family:inherit;">이 날짜</button>
+    <button class="wl-chip" data-wl="week" onclick="setWlPeriod('week',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);cursor:pointer;font-family:inherit;">최근 7일</button>
+    <button class="wl-chip" data-wl="all" onclick="setWlPeriod('all',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);cursor:pointer;font-family:inherit;">전체 누적</button>
+  </div>
   <div id="workload-block" style="margin-bottom:20px;">
     <p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">주문 엑셀을 업로드하면 표시됩니다.</p>
   </div>
@@ -1075,43 +1080,82 @@ async function refreshReturns(date){
   el.innerHTML=summary+cards;
 }
 
-// ===== ⚖️ 창고 부하 현황 (주문 stats 기반) =====
-function renderWorkload(out){
-  var el=document.getElementById('workload-block'); if(!el)return;
-  if(!out||!out.stats){ el.innerHTML='<p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">주문 엑셀을 업로드하면 표시됩니다.</p>'; return; }
-  var data=[];
-  WHS.forEach(function(wh){
-    var s=out.stats[wh];
-    if(s&&s.score>0){
-      var multiRatio=s.total>0?Math.round(s.multi/s.total*100):0;
-      data.push({wh:wh, score:s.score, total:s.total, multi:s.multi, single:s.single, multiRatio:multiRatio});
+// ===== ⚖️ 창고 부하 현황 (주문 stats 기반, 기간 합산 지원) =====
+var wlPeriod='day'; // 'day' | 'week' | 'all'
+function setWlPeriod(p, btn){
+  wlPeriod=p;
+  document.querySelectorAll('.wl-chip').forEach(function(b){
+    b.classList.remove('on'); b.style.background='var(--surface)'; b.style.color='var(--ink)';
+  });
+  btn.classList.add('on'); btn.style.background='var(--ink)'; btn.style.color='var(--bg)';
+  refreshWorkload();
+}
+// 선택 기간의 여러 날짜 stats를 합산
+async function aggWorkload(){
+  var whs=WHS, acc={}; whs.forEach(function(w){acc[w]={score:0,total:0,single:0,multi:0};});
+  var curDate=document.getElementById('d-date').value;
+  var targetDates=[];
+  if(wlPeriod==='day'){ targetDates=[curDate]; }
+  else if(wlPeriod==='week'){
+    // 선택일 포함 과거 7일(데이터 있는 날 기준)
+    var idx=availDates.indexOf(curDate);
+    if(idx<0)idx=0;
+    targetDates=availDates.slice(idx, idx+7); // availDates는 최신순
+  } else { targetDates=availDates.slice(); } // 전체
+  var allOut=null;
+  try{ allOut=await window.dbGet('out'); }catch(e){}
+  if(!allOut)return {acc:acc, days:0, range:''};
+  var used=[];
+  targetDates.forEach(function(d){
+    var key=d.replace(/-/g,'');
+    var out=allOut[key];
+    if(out&&out.stats){
+      used.push(d);
+      whs.forEach(function(w){
+        var s=out.stats[w];
+        if(s){ acc[w].score+=s.score||0; acc[w].total+=s.total||0; acc[w].single+=s.single||0; acc[w].multi+=s.multi||0; }
+      });
     }
   });
-  if(data.length===0){ el.innerHTML='<p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">집계된 주문 데이터가 없습니다.</p>'; return; }
+  used.sort();
+  var range = used.length>1 ? (used[0]+' ~ '+used[used.length-1]) : (used[0]||'');
+  return {acc:acc, days:used.length, range:range};
+}
+async function refreshWorkload(){
+  var el=document.getElementById('workload-block'); if(!el)return;
+  var r=await aggWorkload();
+  var acc=r.acc;
+  var data=[];
+  WHS.forEach(function(wh){
+    var s=acc[wh];
+    if(s&&s.score>0){
+      data.push({wh:wh, score:s.score, total:s.total, multi:s.multi, single:s.single,
+                 multiRatio:s.total>0?Math.round(s.multi/s.total*100):0});
+    }
+  });
+  if(data.length===0){ el.innerHTML='<p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">해당 기간에 집계된 주문 데이터가 없습니다.</p>'; return; }
   var totScore=data.reduce(function(a,d){return a+d.score;},0);
   data.forEach(function(d){ d.load=totScore>0?Math.round(d.score/totScore*1000)/10:0; });
-  data.sort(function(a,b){return b.load-a.load;}); // 부하 큰 순
-  var maxLoad=data[0].load;
+  data.sort(function(a,b){return b.load-a.load;});
+  var maxLoad=data[0].load, top=data[0];
   var palette=['#2563eb','#0891b2','#7c3aed','#c026d3','#ea580c'];
-  // 요약 배너: 최대 부하 창고 강조
-  var top=data[0];
+  var periodLabel = wlPeriod==='day'?'이 날짜':(wlPeriod==='week'?'최근 7일':'전체 누적');
+  var rangeTxt = r.days>1 ? (' · '+r.range+' ('+r.days+'일)') : '';
+  var totOrders=data.reduce(function(a,d){return a+d.total;},0);
   var summary='<div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:14px 16px;margin-bottom:14px;">';
   summary+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">';
-  summary+='<span style="font-size:12px;color:var(--ink-3);">가장 부하가 큰 창고</span>';
-  summary+='<span style="font-size:12px;color:var(--ink-3);">총 주문 '+data.reduce(function(a,d){return a+d.total;},0).toLocaleString()+'건</span></div>';
+  summary+='<span style="font-size:12px;color:var(--ink-3);">가장 부하가 큰 창고 · '+periodLabel+rangeTxt+'</span>';
+  summary+='<span style="font-size:12px;color:var(--ink-3);">총 주문 '+totOrders.toLocaleString()+'건</span></div>';
   summary+='<p style="font-size:22px;font-weight:700;color:var(--ink);">'+WH_LABELS[top.wh]+' <span style="color:'+(top.load>=50?'var(--neg)':'var(--blue)')+';">'+top.load+'%</span> <span style="font-size:13px;font-weight:400;color:var(--ink-3);">전체 작업 부하 감당</span></p>';
   summary+='</div>';
-  // 창고별 부하 막대
   var bars='<div style="display:flex;flex-direction:column;gap:10px;">';
   data.forEach(function(d,i){
     var col=palette[i%palette.length];
     var barW=maxLoad>0?Math.round(d.load/maxLoad*100):0;
-    bars+='<div>';
-    bars+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">';
+    bars+='<div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">';
     bars+='<span style="font-size:13px;font-weight:600;color:var(--ink);">'+WH_LABELS[d.wh]+' <span style="font-size:16px;font-weight:700;">'+d.load+'%</span></span>';
     bars+='<span style="font-size:11px;color:var(--ink-3);">주문 '+d.total.toLocaleString()+'건 · 합포장 '+d.multiRatio+'% · 가중작업량 '+d.score.toLocaleString()+'</span></div>';
-    bars+='<div style="height:14px;background:var(--line);border-radius:7px;overflow:hidden;"><div style="height:100%;width:'+barW+'%;background:'+col+';border-radius:7px;transition:width .5s;"></div></div>';
-    bars+='</div>';
+    bars+='<div style="height:14px;background:var(--line);border-radius:7px;overflow:hidden;"><div style="height:100%;width:'+barW+'%;background:'+col+';border-radius:7px;transition:width .5s;"></div></div></div>';
   });
   bars+='</div>';
   el.innerHTML=summary+bars;
@@ -1251,8 +1295,8 @@ async function refreshDashboard(){
   var mgrData={};
   for(var i=0;i<WHS.length;i++){var m=await getMgr(date,WHS[i]);if(m)mgrData[WHS[i]]=m;}
 
-  // ⚖️ 창고 부하 현황
-  renderWorkload(out);
+  // ⚖️ 창고 부하 현황 (기간 합산)
+  refreshWorkload();
 
   // Insights
   var insights=buildInsights(mgrData,out);
