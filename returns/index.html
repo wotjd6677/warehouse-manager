@@ -98,6 +98,13 @@
   .item .body{flex:1}
   .ident{font-size:22px;font-weight:800;line-height:1.25;margin-bottom:8px;letter-spacing:-.5px}
   .opt{font-size:14px;color:var(--dim);margin-bottom:9px}
+  .reasonbox{display:flex;align-items:baseline;gap:9px;margin:0 0 10px;padding:9px 13px;border-radius:9px;
+    background:rgba(92,179,255,.10);border:1px solid rgba(92,179,255,.28);}
+  .reasonbox .rlabel{font-size:11px;font-weight:800;color:var(--blue);white-space:nowrap;letter-spacing:.3px;flex-shrink:0}
+  .reasonbox .rtext{font-size:15px;font-weight:600;line-height:1.4;color:var(--ink)}
+  .reasonbox.bad{background:rgba(255,107,107,.12);border-color:rgba(255,107,107,.4)}
+  .reasonbox.bad .rlabel{color:var(--warn,#ff6b6b)}
+  .reasonbox.bad .rtext{color:var(--warn,#ff6b6b)}
   .meta{display:flex;flex-wrap:wrap;gap:7px 8px;align-items:center}
   .tag{font-size:13px;font-weight:600;padding:5px 11px;border-radius:8px;background:#0b0d11;border:1px solid var(--line)}
   .tag .k{color:var(--dim);font-weight:500;margin-right:5px;font-size:11px}
@@ -743,11 +750,14 @@ function render(num){
       <div class="body">
         <div class="ident">${esc(it.i)}</div>
         ${it.o&&it.o!=='nan'?`<div class="opt">${esc(it.o)}</div>`:''}
+        ${(it.r&&it.r!=='nan')||(it.c&&it.c!=='nan')?`<div class="reasonbox${badReason(it.r)?' bad':''}">
+          <span class="rlabel">${badReason(it.r)?'⚠ 반품사유':'반품사유'}</span>
+          <span class="rtext">${it.c&&it.c!=='nan'?`<b>${esc(it.c)}</b> · `:''}${it.r&&it.r!=='nan'?esc(it.r):'(내용없음)'}</span>
+        </div>`:''}
         <div class="meta">
           <span class="tag wh"><span class="k">창고</span>${esc(it.w)}</span>
           <span class="tag"><span class="k">브랜드</span>${esc(it.b)}</span>
           <span class="tag qty"><span class="k">처리수량</span><input type="number" class="qin" data-idx="${idx}" value="${rem}" min="0" max="9999"><span class="qof">/ ${partial?'잔여 '+rem:'총 '+oq}</span></span>
-          <span class="tag reason${badReason(it.r)?' bad':''}"><span class="k">사유</span>${esc(it.c)}${it.r&&it.r!=='nan'?'·'+esc(it.r):''}</span>
         </div></div></div>`;
   });
   staged.add(num);curShown=num;
@@ -1024,7 +1034,17 @@ function ingest(rows){
   const H=rows[hi],col=n=>H.indexOf(n);
   const cInv=col('주문송장번호'),cProd=col('상품약어'),cAlias=col('옵션별칭'),cName=col('상품명(수집)'),
     cOpt=col('옵션명(수집)'),cBrand=col('브랜드명'),cQty=col('수량'),cReason=col('사유'),cClaim=col('클레임구분'),
+    cMallClaim=col('쇼핑몰클레임내용'),cSbClaim=col('사방넷클레임내용'),
     cPn=col('사방넷품번코드'),cDn=col('사방넷단품코드');
+  // 쇼핑몰클레임내용 형식: "[반품접수]고객변심>단순변심(사유없음)" → 유형과 상세로 분리
+  const parseClaim=(raw)=>{
+    let s=String(raw==null?'':raw).replace(/\\+n/g,' ').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').trim();
+    if(!s||s==='nan')return {type:'',detail:''};
+    let type='';
+    const m=s.match(/^\[([^\]]+)\]/);         // [반품접수] 등
+    if(m){type=m[1].trim();s=s.slice(m[0].length).trim();}
+    return {type, detail:s};                    // detail: "고객변심>단순변심(사유없음)"
+  };
   const mkcode=(pn,dn)=>{const a=String(pn==null?'':pn).replace(/\.0$/,'').replace(/[^0-9]/g,''),b=String(dn==null?'':dn).replace(/\.0$/,'').replace(/[^0-9]/g,'');return (a&&b)?a+'-'+b.padStart(4,'0'):''};
   let added=0;
   for(let i=hi+1;i<rows.length;i++){
@@ -1033,12 +1053,25 @@ function ingest(rows){
     num=String(num).replace(/\.0$/,'').replace(/[^0-9]/g,'').trim();
     if(num.length<8)continue;
     const pname=(r[cAlias]!=null&&r[cAlias]!=='')?r[cAlias]:r[cName];   // 품목=옵션별칭
+    // 사유: 쇼핑몰클레임내용 우선, 없으면 사방넷클레임내용, 그것도 없으면 기존 '사유' 열
+    let claimRaw=(cMallClaim>=0&&r[cMallClaim]!=null&&r[cMallClaim]!=='')?r[cMallClaim]
+                :(cSbClaim>=0&&r[cSbClaim]!=null&&r[cSbClaim]!=='')?r[cSbClaim]
+                :(cReason>=0?r[cReason]:'');
+    const pc=parseClaim(claimRaw);
+    // c = 클레임유형(접수구분: 반품접수/교환접수 등), r = 상세 반품사유
+    const claimType = pc.type || String(r[cClaim]||'').trim();   // 유형 없으면 클레임구분으로 폴백
     const item={i:String(pname||''),o:String(r[cOpt]||''),b:String(r[cBrand]||''),
-      q:String(r[cQty]||'').replace(/\.0$/,''),r:String(r[cReason]||''),c:String(r[cClaim]||''),w:warehouse(r[cProd]),
+      q:String(r[cQty]||'').replace(/\.0$/,''),r:pc.detail,c:claimType,w:warehouse(r[cProd]),
       a:String(r[cProd]||'').trim(),
       p:(cPn>=0&&cDn>=0)?mkcode(r[cPn],r[cDn]):''};
     if(!DATA[num])DATA[num]=[];
-    if(!DATA[num].some(x=>x.i===item.i&&x.o===item.o)){DATA[num].push(item);added++}
+    const dup=DATA[num].find(x=>x.i===item.i&&x.o===item.o);
+    if(!dup){DATA[num].push(item);added++}
+    else{
+      // 이미 있는 품목이라도 사유/유형이 비어있으면 새 값으로 보충 (예전 데이터에 사유 없던 경우)
+      if((!dup.r||dup.r==='nan'||dup.r==='')&&item.r){dup.r=item.r;added++}
+      if((!dup.c||dup.c==='nan'||dup.c==='')&&item.c){dup.c=item.c}
+    }
   }
   return added;
 }
