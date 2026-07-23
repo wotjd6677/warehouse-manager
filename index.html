@@ -236,8 +236,10 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
 
 <div class="tab-bar">
   <button class="tab-btn active" onclick="showTab('manager')" id="tab-manager">매니저 입력</button>
+  <button class="tab-btn" onclick="showTab('ops')" id="tab-ops">운영 진단</button>
   <button class="tab-btn" onclick="showTab('dashboard')" id="tab-dashboard">대표 대시보드</button>
   <button class="tab-btn" onclick="showTab('cs')" id="tab-cs">CS 현황</button>
+  <button class="tab-btn" onclick="showTab('goal')" id="tab-goal">목표 설정</button>
 </div>
 
 <div class="main">
@@ -359,6 +361,12 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
       </div>
       <div class="rack-bar-wrap"><div id="m-rack-bar" style="height:100%;border-radius:4px;background:var(--blue);width:0%;transition:width .3s;"></div></div>
     </div>
+
+    <hr class="divider">
+    <p class="section-ttl">기타 업무 (1~3분 입력)</p>
+    <p class="hint" style="margin-bottom:10px;">피킹·포장 외 업무에 들어간 시간. 입력해두면 효율이 낮은 날의 <strong>원인</strong>이 설명됩니다. 해당 없으면 비워두세요.</p>
+    <div id="etc-rows"></div>
+    <p class="hint" id="etc-summary" style="margin-top:8px;">기타 업무 총 0시간</p>
 
     <hr class="divider">
     <p class="section-ttl">특이사항 (선택)</p>
@@ -561,6 +569,75 @@ html.dark select:focus, html.dark input:focus { box-shadow: 0 0 0 3px rgba(255,2
 
 </div><!-- end view-dashboard -->
 
+<!-- 운영 진단 (물류팀장용) -->
+<div id="view-ops" style="display:none;">
+  <div class="period-bar">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);">기준일</span>
+      <button onclick="opsStep(-1)" style="width:30px;height:32px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);cursor:pointer;color:var(--ink);font-size:14px;">◀</button>
+      <select id="ops-date-sel" onchange="opsPick(this.value)" style="height:32px;min-width:150px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font-family:inherit;font-size:14px;padding:0 8px;cursor:pointer;"></select>
+      <button onclick="opsStep(1)" style="width:30px;height:32px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);cursor:pointer;color:var(--ink);font-size:14px;">▶</button>
+    </div>
+    <div style="margin-left:auto;font-size:11px;color:var(--ink-3);" id="ops-updated">—</div>
+  </div>
+
+  <!-- 데이터 완성도 -->
+  <div id="ops-completeness" class="card" style="border-left:3px solid var(--warn);">
+    <p class="loading">로딩 중...</p>
+  </div>
+
+  <!-- 오늘 확인·조치할 사항 -->
+  <div class="section-header">
+    <span class="section-title">📋 오늘 확인·조치할 사항</span>
+    <span class="section-desc">문제/변화 → 근거 수치 → 원인 → 권장 조치</span>
+  </div>
+  <div id="ops-actions" style="margin-bottom:20px;"><p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">로딩 중...</p></div>
+
+  <!-- 창고별 부하 & 목표 달성률 -->
+  <div class="section-header">
+    <span class="section-title">⚖️ 창고별 부하와 목표 달성률</span>
+    <span class="section-desc">시간당 처리량(처리량÷투입시간, 1인 기준) 기준 · 인당 일일은 보조지표</span>
+  </div>
+  <div id="ops-scorecards" style="margin-bottom:20px;"><p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">로딩 중...</p></div>
+
+  <!-- 창고 선택 드릴다운 -->
+  <div class="section-header">
+    <span class="section-title">🔍 창고 상세 (효율 변동 원인)</span>
+    <span class="section-desc">창고를 선택하면 물량·인력·효율 추이와 기타 업무를 함께 확인</span>
+  </div>
+  <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+    <select id="ops-wh" onchange="renderOpsDetail()" style="height:32px;min-width:140px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font-family:inherit;font-size:13px;padding:0 8px;cursor:pointer;">
+      <option value="1창고">1창고</option>
+      <option value="2창고그린">2창고 그린</option>
+      <option value="2창고블루">2창고 블루</option>
+      <option value="3창고">3창고</option>
+    </select>
+    <span style="width:1px;height:20px;background:var(--line);margin:0 4px;"></span>
+    <button class="ops-gran on" data-g="day" onclick="setOpsGran('day',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--ink);color:var(--bg);cursor:pointer;font-family:inherit;">일별</button>
+    <button class="ops-gran" data-g="week" onclick="setOpsGran('week',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);cursor:pointer;font-family:inherit;">주별</button>
+    <button class="ops-gran" data-g="month" onclick="setOpsGran('month',this)" style="font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);cursor:pointer;font-family:inherit;">월별</button>
+  </div>
+  <div id="ops-detail"><p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">로딩 중...</p></div>
+</div>
+
+<!-- 목표 설정 -->
+<div id="view-goal" style="display:none;">
+  <div class="card">
+    <p class="card-title">창고별 목표 설정</p>
+    <p class="hint" style="margin-bottom:14px;">
+      임시 기준으로 시작해서 4~8주 운영 후 실제 데이터로 조정하세요. 비워두면 해당 지표는 목표 달성률 계산에서 제외됩니다.<br>
+      <strong>피킹·포장 목표는 시간당 처리량(1인 기준)</strong>, 인당 일일 목표는 보조지표입니다.
+    </p>
+    <div id="goal-forms"></div>
+    <button class="save-btn" onclick="saveGoals()" style="margin-top:12px;">목표 저장</button>
+  </div>
+  <div class="card">
+    <p class="card-title">최근 4주 실적 참고값</p>
+    <p class="hint" style="margin-bottom:10px;">현재까지 쌓인 데이터의 창고별 중앙값입니다. 목표를 처음 잡을 때 참고하세요.</p>
+    <div id="goal-reference"><p class="loading">로딩 중...</p></div>
+  </div>
+</div>
+
 <!-- CS 현황 -->
 <div id="view-cs" style="display:none;">
 
@@ -669,20 +746,21 @@ document.addEventListener('keydown',function(e){
   if((e.ctrlKey||e.metaKey)&&e.key==='e'){e.preventDefault();exportCSV();}
 });
 
+const OPS_VIEWS=['manager','ops','dashboard','cs','goal'];
 function showTab(t){
-  if(t==='dashboard'||t==='cs'){
+  if(t==='dashboard'||t==='cs'||t==='ops'){
     var pw=prompt('대표 비밀번호를 입력하세요');
     if(pw===null)return;
     if(pw!=='carpediem1224!!'){alert('비밀번호가 틀렸습니다.');return;}
   }
-  document.getElementById('view-manager').style.display=t==='manager'?'block':'none';
-  document.getElementById('view-dashboard').style.display=t==='dashboard'?'block':'none';
-  document.getElementById('view-cs').style.display=t==='cs'?'block':'none';
-  document.getElementById('tab-manager').classList.toggle('active',t==='manager');
-  document.getElementById('tab-dashboard').classList.toggle('active',t==='dashboard');
-  document.getElementById('tab-cs').classList.toggle('active',t==='cs');
+  OPS_VIEWS.forEach(function(v){
+    var el=document.getElementById('view-'+v); if(el)el.style.display=(v===t?'block':'none');
+    var tb=document.getElementById('tab-'+v); if(tb)tb.classList.toggle('active',v===t);
+  });
   if(t==='dashboard'){loadAvailDates().then(function(){baselineCache=null;return refreshDashboard();});_initMissRange();}
   if(t==='cs')loadCSData();
+  if(t==='ops')initOpsTab();
+  if(t==='goal')initGoalTab();
 }
 
 function updateWhView(){
@@ -781,15 +859,18 @@ async function saveManagerData(){
     rackRemain:isGreen?0:(parseInt(document.getElementById('m-rack-remain').value)||0),
     rackTotal:isGreen?0:(parseInt(document.getElementById('m-rack-total').value)||0),
     note:document.getElementById('m-note').value,
+    etcWork:collectEtc(),
     ts:Date.now()
   };
   try{
     var whKey=wh.replace(/[^a-zA-Z0-9가-힣]/g,'');
     await window.dbSet('mgr/'+date.replace(/-/g,'')+'_'+whKey,data);
     allOutCache=null;
+    opsAllMgr=null; opsAllOut=null;
     showToast('저장됐어요!');
     renderRecentEntries();
     document.getElementById('m-note').value='';
+    clearEtcForm();
   }catch(e){showToast('저장 오류: '+e.message);}
 }
 
@@ -806,6 +887,7 @@ async function renderRecentEntries(){
       if(d.packHours)parts.push('포장 '+d.packHours+'h');
       if(d.grossHours)parts.push('그로스 '+d.grossHours+'h');
       if(d.haulHours)parts.push('하역 '+d.haulHours+'h');
+      if(d.etcWork&&d.etcWork.totalManHours>0)parts.push('기타 '+d.etcWork.totalManHours+'h');
       if(d.rackTotal>0)parts.push('랙 '+Math.round((d.rackTotal-d.rackRemain)/d.rackTotal*100)+'%');
       html+='<div class="row-item"><span style="color:var(--ink-2);">'+d.date+' <strong>'+d.wh+'</strong></span>';
       html+='<span style="font-size:12px;color:var(--ink-2);">직원 '+d.staff+'명'+(parts.length?' · '+parts.join(' · '):'')+'</span></div>';
@@ -1871,6 +1953,636 @@ function processCSData(rows){
   tableHtml+='</tbody></table>';
   document.getElementById('cs-table').innerHTML=tableHtml;
 }
+
+
+/* ============================================================
+   운영관리 확장 모듈 — 기타업무 / 목표 / 운영진단 / 데이터 완성도
+   ============================================================ */
+
+// 기타 업무 항목 정의
+const ETC_TASKS=[
+  {k:'inbound', label:'입고 및 적치'},
+  {k:'rack',    label:'파레트 및 랙 정리'},
+  {k:'count',   label:'재고조사'},
+  {k:'returnw', label:'반품·양품화'},
+  {k:'haulw',   label:'하역·컨테이너 작업'},
+  {k:'etc',     label:'기타 특이업무'}
+];
+
+// 목표 항목 정의 (시간당 처리량 = 주지표)
+const GOAL_FIELDS=[
+  {k:'pickTarget',   label:'시간당 피킹 목표',        unit:'건/시간', ph:'예: 60'},
+  {k:'packTarget',   label:'시간당 포장 목표',        unit:'건/시간', ph:'예: 45'},
+  {k:'dailyTarget',  label:'인당 일일 처리 목표',      unit:'건/인일', ph:'예: 400'},
+  {k:'returnTarget', label:'반품·양품화 목표',        unit:'건/시간', ph:'예: 25'},
+  {k:'palletTarget', label:'파레트 정리·입고 목표',    unit:'파레트/시간', ph:'예: 4'}
+];
+
+var goalsCache=null;
+
+/* ---------- 기타 업무 입력 UI ---------- */
+function renderEtcRows(){
+  var wrap=document.getElementById('etc-rows'); if(!wrap)return;
+  var html='';
+  ETC_TASKS.forEach(function(t){
+    html+='<div class="sub-box" style="margin-bottom:8px;padding:10px 12px;">';
+    html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+    html+='<input type="checkbox" id="etc-on-'+t.k+'" onchange="toggleEtc(\''+t.k+'\')" style="width:16px;height:16px;cursor:pointer;">';
+    html+='<label for="etc-on-'+t.k+'" style="font-size:13px;font-weight:600;cursor:pointer;">'+t.label+'</label></div>';
+    html+='<div id="etc-body-'+t.k+'" style="display:none;">';
+    html+='<div class="form-row" style="margin-bottom:6px;">';
+    html+='<div><p class="form-label">투입 인원</p><input type="number" id="etc-p-'+t.k+'" min="0" step="1" value="0" oninput="updateEtcSummary()"></div>';
+    html+='<div><p class="form-label">대략 투입시간 (1인 기준, h)</p><input type="number" id="etc-h-'+t.k+'" min="0" step="0.5" value="0" oninput="updateEtcSummary()"></div>';
+    html+='</div>';
+    html+='<input type="text" id="etc-n-'+t.k+'" placeholder="특이사항 (선택)" style="font-size:12px;">';
+    html+='</div></div>';
+  });
+  wrap.innerHTML=html;
+}
+function toggleEtc(k){
+  var on=document.getElementById('etc-on-'+k).checked;
+  document.getElementById('etc-body-'+k).style.display=on?'block':'none';
+  if(!on){document.getElementById('etc-p-'+k).value=0;document.getElementById('etc-h-'+k).value=0;document.getElementById('etc-n-'+k).value='';}
+  updateEtcSummary();
+}
+function collectEtc(){
+  var out={},total=0;
+  ETC_TASKS.forEach(function(t){
+    var cb=document.getElementById('etc-on-'+t.k); if(!cb||!cb.checked)return;
+    var p=parseFloat(document.getElementById('etc-p-'+t.k).value)||0;
+    var h=parseFloat(document.getElementById('etc-h-'+t.k).value)||0;
+    var mh=Math.round(p*h*10)/10;
+    if(mh<=0&&!document.getElementById('etc-n-'+t.k).value)return;
+    out[t.k]={people:p,hours:h,manHours:mh,note:document.getElementById('etc-n-'+t.k).value||''};
+    total+=mh;
+  });
+  return {tasks:out,totalManHours:Math.round(total*10)/10};
+}
+function updateEtcSummary(){
+  var e=collectEtc();
+  var el=document.getElementById('etc-summary'); if(!el)return;
+  var n=Object.keys(e.tasks).length;
+  el.innerHTML=n===0?'기타 업무 총 0시간':'기타 업무 <strong>'+n+'개 항목 · 총 '+e.totalManHours+'시간</strong> (1인 기준)';
+}
+function clearEtcForm(){
+  ETC_TASKS.forEach(function(t){
+    var cb=document.getElementById('etc-on-'+t.k); if(cb){cb.checked=false;}
+    var b=document.getElementById('etc-body-'+t.k); if(b)b.style.display='none';
+    var p=document.getElementById('etc-p-'+t.k); if(p)p.value=0;
+    var h=document.getElementById('etc-h-'+t.k); if(h)h.value=0;
+    var n=document.getElementById('etc-n-'+t.k); if(n)n.value='';
+  });
+  updateEtcSummary();
+}
+
+/* ---------- 목표 설정 ---------- */
+async function loadGoals(force){
+  if(goalsCache&&!force)return goalsCache;
+  var g=null;
+  try{ g=await window.dbGet('goals'); }catch(e){}
+  goalsCache=g||{};
+  return goalsCache;
+}
+function initGoalTab(){
+  var wrap=document.getElementById('goal-forms'); if(!wrap)return;
+  loadGoals(true).then(function(g){
+    var html='';
+    WHS.forEach(function(wh){
+      var cur=g[wh]||{};
+      html+='<div style="border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;">';
+      html+='<p style="font-size:13px;font-weight:700;margin-bottom:10px;color:'+WH_COLORS[wh]+';">'+WH_LABELS[wh]+'</p>';
+      html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">';
+      GOAL_FIELDS.forEach(function(f){
+        var v=(cur[f.k]!==undefined&&cur[f.k]!==null)?cur[f.k]:'';
+        html+='<div><p class="form-label">'+f.label+' <span style="color:var(--ink-3);font-weight:400;">('+f.unit+')</span></p>';
+        html+='<input type="number" min="0" step="0.1" id="goal-'+WH_ID[wh]+'-'+f.k+'" value="'+v+'" placeholder="'+f.ph+'"></div>';
+      });
+      html+='</div></div>';
+    });
+    wrap.innerHTML=html;
+  });
+  renderGoalReference();
+}
+async function saveGoals(){
+  if(!isFirebaseReady){showToast('Firebase 연결 중...');return;}
+  var payload={};
+  WHS.forEach(function(wh){
+    var o={};
+    GOAL_FIELDS.forEach(function(f){
+      var el=document.getElementById('goal-'+WH_ID[wh]+'-'+f.k);
+      var v=el&&el.value!==''?parseFloat(el.value):null;
+      if(v!==null&&!isNaN(v)&&v>0)o[f.k]=v;
+    });
+    o.updatedAt=Date.now();
+    payload[wh]=o;
+  });
+  try{
+    await window.dbSet('goals',payload);
+    goalsCache=payload;
+    showToast('목표가 저장됐어요!');
+  }catch(e){showToast('저장 오류: '+e.message);}
+}
+async function renderGoalReference(){
+  var el=document.getElementById('goal-reference'); if(!el)return;
+  try{
+    var base=await computeBaselines();
+    var html='<table class="data-table"><thead><tr><th>창고</th><th class="num">피킹 실적 중앙값</th><th class="num">포장 실적 중앙값</th><th class="num">표본일수</th></tr></thead><tbody>';
+    WHS.forEach(function(wh){
+      html+='<tr><td style="font-weight:600;">'+WH_LABELS[wh]+'</td>';
+      html+='<td class="num">'+(base.pickEff[wh]!==null?base.pickEff[wh]+'/시간':'—')+'</td>';
+      html+='<td class="num">'+(base.packEff[wh]!==null?base.packEff[wh]+'/시간':'—')+'</td>';
+      html+='<td class="num" style="color:var(--ink-3);">'+(base.effSamples[wh]||0)+'일</td></tr>';
+    });
+    html+='</tbody></table>';
+    el.innerHTML=html;
+  }catch(e){ el.innerHTML='<p style="font-size:12px;color:var(--ink-3);">참고값을 불러오지 못했습니다.</p>'; }
+}
+
+/* ---------- 운영 진단 탭 ---------- */
+var opsGran='day';
+var opsAllOut=null, opsAllMgr=null;
+
+function setOpsGran(g,btn){
+  opsGran=g;
+  document.querySelectorAll('.ops-gran').forEach(function(b){b.classList.remove('on');b.style.background='var(--surface)';b.style.color='var(--ink)';});
+  btn.classList.add('on');btn.style.background='var(--ink)';btn.style.color='var(--bg)';
+  renderOpsDetail();
+}
+async function initOpsTab(){
+  if(!isFirebaseReady){setTimeout(initOpsTab,400);return;}
+  await loadAvailDates();
+  var sel=document.getElementById('ops-date-sel');
+  if(sel){
+    if(!availDates.length){sel.innerHTML='<option value="">데이터 없음</option>';}
+    else{
+      sel.innerHTML=availDates.map(function(d){return '<option value="'+d+'">'+d+'</option>';}).join('');
+      if(!sel.value)sel.value=availDates[0];
+    }
+  }
+  await refreshOps();
+}
+function opsPick(d){ if(!d)return; document.getElementById('ops-date-sel').value=d; refreshOps(); }
+function opsStep(dir){
+  var sel=document.getElementById('ops-date-sel'); if(!sel)return;
+  var i=availDates.indexOf(sel.value); if(i<0)return;
+  var ni=i-dir; if(ni<0||ni>=availDates.length)return;
+  opsPick(availDates[ni]);
+}
+function dkey(d){return String(d).replace(/-/g,'');}
+function whKeyOf(wh){return wh.replace(/[^a-zA-Z0-9가-힣]/g,'');}
+function getMgrFrom(all,date,wh){ if(!all)return null; return all[dkey(date)+'_'+whKeyOf(wh)]||null; }
+function getOutFrom(all,date){ if(!all)return null; return all[dkey(date)]||null; }
+
+async function loadOpsData(force){
+  if(opsAllOut&&opsAllMgr&&!force)return;
+  try{ opsAllOut=await window.dbGet('out')||{}; }catch(e){ opsAllOut={}; }
+  try{ opsAllMgr=await window.dbGet('mgr')||{}; }catch(e){ opsAllMgr={}; }
+}
+
+// 최근 N영업일(토요일 제외) 날짜 배열, 기준일 이전
+function recentDates(baseDate,n){
+  var out=[],d=new Date(baseDate+'T00:00:00');
+  var guard=0;
+  while(out.length<n&&guard<200){
+    d.setDate(d.getDate()-1); guard++;
+    if(d.getDay()===6)continue; // 토요일 제외
+    out.push(d.toISOString().slice(0,10));
+  }
+  return out;
+}
+
+// 창고 하루치 운영 지표 (시간당 처리량 = 주지표)
+function opsMetrics(out,mgr,wh){
+  if(!mgr)return null;
+  var s=out&&out.stats&&out.stats[wh]?out.stats[wh]:null;
+  var staffH=mgr.staffHours||0, pickH=mgr.pickHours||0, packH=mgr.packHours||0;
+  var grossH=mgr.grossHours||0, haulH=mgr.haulHours||0, retH=mgr.returnHours||0;
+  var etc=mgr.etcWork&&mgr.etcWork.totalManHours?mgr.etcWork.totalManHours:0;
+
+  var pickInput=staffH+pickH;                 // 피킹 투입시간 (1인 기준 합계)
+  var packInput=packH;                        // 포장 투입시간 (1인 기준 합계)
+  var otherInput=grossH+haulH+retH+etc;       // 피킹·포장 외 투입시간
+  var totalInput=pickInput+packInput+otherInput;
+
+  var score=s?s.score:null;                   // 합포장 가중 처리량
+  var total=s?s.total:null;                   // 송장 건수
+  var single=s?s.single:null, multi=s?s.multi:null;
+  var pr=PACK_RATIO[wh]!==undefined?PACK_RATIO[wh]:1.0;
+  var packTarget=total!==null?Math.round(total*pr):null;
+
+  // 주지표: 순수 작업 시간당 처리량
+  var pickEff=(score!==null&&pickInput>0)?Math.round(score/pickInput*10)/10:null;
+  var packEff=(packTarget!==null&&packInput>0)?Math.round(packTarget/packInput*10)/10:null;
+  // 보조지표: 인당 일일
+  var headcount=(mgr.staff||0)+(mgr.pickStaff||0);
+  var perPerson=(score!==null&&headcount>0)?Math.round(score/headcount):null;
+  // 가동률: 총 투입시간 중 피킹·포장 비중
+  var utilization=totalInput>0?Math.round((pickInput+packInput)/totalInput*100):null;
+  var avgBundle=(multi&&multi>0)?Math.round(((score||0)-(single||0))/multi*10)/10:null;
+  var bundleRatio=(total&&total>0)?Math.round(multi/total*100):null;
+
+  return {pickEff,packEff,perPerson,utilization,pickInput,packInput,otherInput,totalInput,
+          etcManHours:etc,score,total,single,multi,packTarget,avgBundle,bundleRatio,headcount,
+          grossH,haulH,retH,mgr};
+}
+
+// 최근 4주 기준선 (창고별 pickEff/packEff 중앙값)
+function trailingBaseline(wh,baseDate,days){
+  var dates=recentDates(baseDate,days||20);
+  var pe=[],pa=[];
+  dates.forEach(function(d){
+    var m=opsMetrics(getOutFrom(opsAllOut,d),getMgrFrom(opsAllMgr,d,wh),wh);
+    if(m){ if(m.pickEff!==null)pe.push(m.pickEff); if(m.packEff!==null)pa.push(m.packEff); }
+  });
+  return {pickEff:median(pe),packEff:median(pa),n:pe.length};
+}
+
+/* ---------- 데이터 완성도 ---------- */
+function assessCompleteness(date){
+  var out=getOutFrom(opsAllOut,date);
+  var items=[], missing=[], filled=0, tot=0;
+  // 1) 주문 데이터
+  tot++;
+  if(out&&out.stats){filled++;items.push({ok:true,label:'주문 데이터 (엑셀 업로드)'});}
+  else{items.push({ok:false,label:'주문 데이터 (엑셀 업로드)'});missing.push('주문 엑셀 미업로드');}
+  // 2) 창고별 매니저 입력
+  WHS.forEach(function(wh){
+    tot++;
+    var mgr=getMgrFrom(opsAllMgr,date,wh);
+    if(!mgr){items.push({ok:false,label:WH_LABELS[wh]+' 인원·근무시간'});missing.push(WH_LABELS[wh]+' 인원 미입력');return;}
+    var hasHours=(mgr.staffHours||0)+(mgr.pickHours||0)+(mgr.packHours||0)>0;
+    if(hasHours){filled++;items.push({ok:true,label:WH_LABELS[wh]+' 인원·근무시간'});}
+    else{items.push({ok:false,label:WH_LABELS[wh]+' 인원·근무시간'});missing.push(WH_LABELS[wh]+' 근무시간 0');}
+  });
+  // 3) 기타 업무 (권장)
+  var etcMissing=[];
+  WHS.forEach(function(wh){
+    var mgr=getMgrFrom(opsAllMgr,date,wh);
+    if(mgr&&!(mgr.etcWork&&Object.keys(mgr.etcWork.tasks||{}).length))etcMissing.push(WH_LABELS[wh]);
+  });
+  var pct=tot>0?Math.round(filled/tot*100):0;
+  // 이상값 점검
+  var warnings=[];
+  WHS.forEach(function(wh){
+    var m=opsMetrics(out,getMgrFrom(opsAllMgr,date,wh),wh);
+    if(!m)return;
+    if(m.score!==null&&m.score>0&&m.pickInput===0)warnings.push(WH_LABELS[wh]+': 출고 물량은 있는데 피킹 투입시간이 0 — 인원 입력 누락 의심');
+    if(m.pickInput>0&&(m.score===null||m.score===0))warnings.push(WH_LABELS[wh]+': 인원은 투입됐는데 출고 물량 0 — 주문 데이터 확인 필요');
+    if(m.pickEff!==null&&m.pickEff>500)warnings.push(WH_LABELS[wh]+': 피킹 처리량 '+m.pickEff+'건/시간 — 비정상적으로 높음, 시간 입력 확인');
+  });
+  return {pct,items,missing,etcMissing,warnings,provisional:pct<100};
+}
+function renderCompleteness(date){
+  var el=document.getElementById('ops-completeness'); if(!el)return;
+  var c=assessCompleteness(date);
+  var col=c.pct>=100?'var(--pos)':c.pct>=70?'var(--warn)':'var(--neg)';
+  el.style.borderLeftColor=col;
+  var html='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">';
+  html+='<span style="font-size:13px;font-weight:700;">📊 데이터 완성도 <span style="color:'+col+';font-size:18px;">'+c.pct+'%</span></span>';
+  html+='<span style="font-size:11px;color:var(--ink-3);">기준일 '+date+'</span></div>';
+  html+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">';
+  c.items.forEach(function(it){
+    html+='<span style="font-size:11px;padding:3px 8px;border-radius:4px;background:'+(it.ok?'var(--pos-bg)':'var(--neg-bg)')+';color:'+(it.ok?'var(--pos)':'var(--neg)')+';">'+(it.ok?'✓ ':'✕ ')+it.label+'</span>';
+  });
+  html+='</div>';
+  if(c.etcMissing.length){
+    html+='<p style="font-size:11px;color:var(--ink-3);margin-bottom:6px;">기타 업무 미입력: '+c.etcMissing.join(', ')+' — 효율 저하 원인 분석이 제한됩니다.</p>';
+  }
+  if(c.warnings.length){
+    html+='<div style="background:var(--warn-bg);border-radius:var(--r-sm);padding:8px 10px;margin-bottom:6px;">';
+    c.warnings.forEach(function(w){html+='<p style="font-size:12px;color:var(--warn);margin-bottom:2px;">⚠ '+w+'</p>';});
+    html+='</div>';
+  }
+  if(c.provisional){
+    html+='<p style="font-size:12px;color:var(--warn);font-weight:600;">※ 일부 데이터가 비어 있어 아래 수치는 <strong>잠정</strong>입니다. 창고 간 비교는 확정 전입니다.</p>';
+  }else{
+    html+='<p style="font-size:12px;color:var(--pos);">모든 항목 입력 완료 — 확정 수치입니다.</p>';
+  }
+  el.innerHTML=html;
+  return c;
+}
+
+/* ---------- 스코어카드 (부하 + 목표 달성률) ---------- */
+function renderOpsScorecards(date,goals){
+  var el=document.getElementById('ops-scorecards'); if(!el)return [];
+  var out=getOutFrom(opsAllOut,date);
+  var rows=[],totalLoad=0;
+  WHS.forEach(function(wh){
+    var mgr=getMgrFrom(opsAllMgr,date,wh);
+    var m=opsMetrics(out,mgr,wh);
+    var s=out&&out.stats&&out.stats[wh]?out.stats[wh]:null;
+    var pr=PACK_RATIO[wh]!==undefined?PACK_RATIO[wh]:1.0;
+    var adj=s?(s.score||0)*(0.5+0.5*pr):0;
+    totalLoad+=adj;
+    rows.push({wh:wh,m:m,adj:adj,base:trailingBaseline(wh,date,20),goal:(goals&&goals[wh])||{}});
+  });
+  rows.forEach(function(r){ r.loadPct=totalLoad>0?Math.round(r.adj/totalLoad*1000)/10:0; });
+  rows.sort(function(a,b){return b.loadPct-a.loadPct;});
+
+  if(!rows.some(function(r){return r.m;})){
+    el.innerHTML='<p style="font-size:13px;color:var(--ink-3);padding:4px 2px;">해당 날짜에 입력된 데이터가 없습니다.</p>';
+    return rows;
+  }
+
+  var html='';
+  rows.forEach(function(r){
+    var m=r.m,g=r.goal,b=r.base;
+    html+='<div class="card" style="margin-bottom:10px;border-left:3px solid '+WH_COLORS[r.wh]+';">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">';
+    html+='<span style="font-size:15px;font-weight:700;">'+WH_LABELS[r.wh]+'</span>';
+    html+='<span style="font-size:12px;color:var(--ink-2);">전체 작업량 중 <strong style="color:'+(r.loadPct>=45?'var(--neg)':'var(--ink)')+';font-size:14px;">'+r.loadPct+'%</strong> 담당</span></div>';
+    if(!m){ html+='<p style="font-size:12px;color:var(--ink-3);">인원 데이터 미입력 — 효율 계산 불가</p></div>'; return; }
+
+    html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;">';
+    html+=goalBlock('피킹',m.pickEff,g.pickTarget,b.pickEff,'건/시간',m.pickInput,'피킹 투입시간 '+m.pickInput+'h'+pickBreakdown(m.mgr));
+    html+=goalBlock('포장',m.packEff,g.packTarget,b.packEff,'건/시간',m.packInput,'포장 투입시간 '+m.packInput+'h'+packBreakdown(m.mgr)+(PACK_RATIO[r.wh]<1?' · 송장만 붙는 물량 제외':''));
+    // 인당 일일 (보조)
+    var pp=m.perPerson,pt=g.dailyTarget;
+    html+='<div style="border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;background:var(--bg-soft);">';
+    html+='<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:4px;">인당 일일 <span style="font-weight:400;text-transform:none;">(보조지표)</span></p>';
+    html+='<p style="font-size:18px;font-weight:600;">'+(pp!==null?pp.toLocaleString():'—')+'<span style="font-size:11px;color:var(--ink-3);font-weight:400;"> 건/인</span></p>';
+    if(pp!==null&&pt){var r2=Math.round(pp/pt*100);html+='<p style="font-size:11px;color:'+(r2>=100?'var(--pos)':r2>=85?'var(--warn)':'var(--neg)')+';">목표 '+pt+' · 달성률 '+r2+'%</p>';}
+    else html+='<p style="font-size:11px;color:var(--ink-3);">'+(pt?'실적 없음':'목표 미설정')+'</p>';
+    html+='<p style="font-size:11px;color:var(--ink-3);">투입 인원 '+m.headcount+'명</p></div>';
+    // 가동률
+    html+='<div style="border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;background:var(--bg-soft);">';
+    html+='<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:4px;">출고작업 가동률</p>';
+    html+='<p style="font-size:18px;font-weight:600;">'+(m.utilization!==null?m.utilization+'%':'—')+'</p>';
+    html+='<p style="font-size:11px;color:var(--ink-3);">총 투입시간 '+m.totalInput+'h 중 피킹·포장 '+(m.pickInput+m.packInput)+'h</p>';
+    if(m.otherInput>0)html+='<p style="font-size:11px;color:var(--warn);">기타 업무 '+m.otherInput+'h 투입</p>';
+    html+='</div>';
+    html+='</div></div>';
+  });
+  el.innerHTML=html;
+  return rows;
+}
+// 투입시간 계산식 표시 — "왜 8시간인데 32냐"를 한 번에 해소
+function pickBreakdown(mgr){
+  if(!mgr)return '';
+  var p=[];
+  if(mgr.staff>0)p.push('직원 '+mgr.staff+'명×8h');
+  if(mgr.pickStaff>0)p.push('피킹알바 '+mgr.pickHours+'h');
+  return p.length?' ('+p.join(' + ')+')':'';
+}
+function packBreakdown(mgr){
+  if(!mgr)return '';
+  if(mgr.packStaff>0)return ' (포장알바 '+mgr.packStaff+'명 '+mgr.packHours+'h)';
+  return '';
+}
+function goalBlock(name,actual,target,baseVal,unit,input,subtext){
+  var h='<div style="border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;background:var(--bg-soft);">';
+  h+='<p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:4px;">'+name+' 시간당 처리량</p>';
+  h+='<p style="font-size:18px;font-weight:600;">'+(actual!==null?actual:'—')+'<span style="font-size:11px;color:var(--ink-3);font-weight:400;"> '+unit+'</span></p>';
+  if(actual!==null&&target){
+    var rate=Math.round(actual/target*100);
+    var col=rate>=100?'var(--pos)':rate>=85?'var(--warn)':'var(--neg)';
+    h+='<p style="font-size:11px;color:'+col+';font-weight:600;">목표 '+target+' · 달성률 '+rate+'%</p>';
+  }else if(actual!==null){
+    h+='<p style="font-size:11px;color:var(--ink-3);">목표 미설정</p>';
+  }else{
+    h+='<p style="font-size:11px;color:var(--ink-3);">데이터 없음</p>';
+  }
+  if(actual!==null&&baseVal!==null&&baseVal>0){
+    var d=Math.round((actual/baseVal-1)*1000)/10;
+    var dc=d>=0?'var(--pos)':'var(--neg)';
+    h+='<p style="font-size:11px;color:'+dc+';">최근 4주 평균 대비 '+(d>=0?'+':'')+d+'%</p>';
+  }
+  if(subtext)h+='<p style="font-size:11px;color:var(--ink-3);">'+subtext+'</p>';
+  h+='</div>';
+  return h;
+}
+
+/* ---------- 오늘 확인·조치할 사항 ---------- */
+function buildOpsActions(date,rows,comp){
+  var acts=[];
+  // 0. 데이터 완성도 이슈 최우선
+  if(comp&&comp.pct<100&&comp.missing.length){
+    acts.push({
+      level:'info',
+      title:'데이터 입력 누락',
+      evidence:'완성도 '+comp.pct+'% · '+comp.missing.join(' / '),
+      cause:'해당 창고 지표는 계산에서 제외되거나 잠정 수치로 표시됩니다.',
+      action:'담당 매니저에게 입력 요청 후 재확인하세요. 누락 상태에서는 창고 간 비교를 판단 근거로 쓰지 마세요.'
+    });
+  }
+  rows.forEach(function(r){
+    var m=r.m,g=r.goal,b=r.base; if(!m)return;
+    // 1. 목표 미달
+    [['피킹','pickEff','pickTarget'],['포장','packEff','packTarget']].forEach(function(pair){
+      var nm=pair[0],ak=pair[1],gk=pair[2];
+      var a=m[ak],t=g[gk];
+      if(a===null||!t)return;
+      var rate=Math.round(a/t*100);
+      if(rate>=85)return;
+      var bv=b[ak];
+      var delta=(bv!==null&&bv>0)?Math.round((a/bv-1)*1000)/10:null;
+      var cause=[];
+      if(m.otherInput>0)cause.push('금일 기타 업무에 '+m.otherInput+'시간 투입 (1인 기준)');
+      if(m.bundleRatio!==null&&m.bundleRatio>=40)cause.push('합포장 비율 '+m.bundleRatio+'% (평균 '+(m.avgBundle||'—')+'개/묶음)로 난이도 상승');
+      if(!cause.length)cause.push('특이 요인 미확인 — 기타 업무 입력이 비어 있을 수 있음');
+      acts.push({
+        level:rate<70?'neg':'warn',
+        title:WH_LABELS[r.wh]+' '+nm+' 목표 미달',
+        evidence:'실적 '+a+'건/시간 · 목표 '+t+'건/시간 · 달성률 '+rate+'%'+(delta!==null?' · 최근 4주 평균 대비 '+(delta>=0?'+':'')+delta+'%':''),
+        cause:cause.join(' / '),
+        action:'일시적 하락인지 확인하고, 3일 연속 미달 시 작업 동선과 인력 배치를 점검하세요.'
+      });
+    });
+    // 2. 목표 없이 급락
+    ['pickEff','packEff'].forEach(function(k){
+      var nm=k==='pickEff'?'피킹':'포장';
+      var gk=k==='pickEff'?'pickTarget':'packTarget';
+      if(g[gk])return; // 위에서 처리
+      var a=m[k],bv=b[k];
+      if(a===null||bv===null||bv<=0||b.n<3)return;
+      var d=Math.round((a/bv-1)*1000)/10;
+      if(d>-12)return;
+      acts.push({
+        level:'warn',
+        title:WH_LABELS[r.wh]+' '+nm+' 효율 하락',
+        evidence:'실적 '+a+'건/시간 · 최근 4주 평균 '+bv+'건/시간 대비 '+d+'%',
+        cause:m.otherInput>0?('기타 업무 '+m.otherInput+'시간 투입 (1인 기준)'):'원인 미확인 (기타 업무 미입력)',
+        action:'목표치가 아직 없습니다. 목표 설정 탭에서 임시 기준을 잡아두면 판단이 빨라집니다.'
+      });
+    });
+    // 3. 부하 쏠림
+    if(r.loadPct>=45){
+      acts.push({
+        level:'warn',
+        title:WH_LABELS[r.wh]+' 작업 부하 집중',
+        evidence:'전체 작업량 중 '+r.loadPct+'% 담당 · 송장 '+(m.total!==null?m.total.toLocaleString()+'건':'—'),
+        cause:'물량이 한 창고에 몰려 있습니다.',
+        action:'인력 재배치 또는 타 창고 분산 출고를 검토하세요.'
+      });
+    }
+    // 4. 파레트랙 포화
+    var mgr=m.mgr;
+    if(mgr&&mgr.rackTotal>0){
+      var used=Math.round((mgr.rackTotal-mgr.rackRemain)/mgr.rackTotal*100);
+      if(used>=90){
+        acts.push({
+          level:'neg',
+          title:WH_LABELS[r.wh]+' 파레트랙 포화',
+          evidence:'사용률 '+used+'% · 잔여 '+mgr.rackRemain+'칸 / 전체 '+mgr.rackTotal+'칸',
+          cause:'입고 대비 출고·정리가 따라가지 못하고 있습니다.',
+          action:'금일 중 파레트 정리 인력을 배정하거나 입고 일정을 조정하세요.'
+        });
+      }
+    }
+    // 5. 가동률 낮음
+    if(m.utilization!==null&&m.utilization<60&&m.totalInput>8){
+      acts.push({
+        level:'info',
+        title:WH_LABELS[r.wh]+' 출고 외 업무 비중 높음',
+        evidence:'총 투입시간 '+m.totalInput+'h 중 피킹·포장 '+(m.pickInput+m.packInput)+'h (가동률 '+m.utilization+'%)',
+        cause:'기타 업무에 '+m.otherInput+'시간이 투입됐습니다 (1인 기준).',
+        action:'오늘 효율 저하는 비효율이 아니라 업무 구성 차이입니다. 판단 시 참고하세요.'
+      });
+    }
+  });
+  var order={neg:0,warn:1,info:2};
+  acts.sort(function(a,b){return order[a.level]-order[b.level];});
+  return acts;
+}
+function renderOpsActions(acts){
+  var el=document.getElementById('ops-actions'); if(!el)return;
+  if(!acts.length){
+    el.innerHTML='<div class="card" style="border-left:3px solid var(--pos);"><p style="font-size:13px;color:var(--pos);font-weight:600;">✓ 특이사항 없음</p><p style="font-size:12px;color:var(--ink-2);margin-top:4px;">모든 창고가 목표 범위 내에 있고 즉시 조치가 필요한 항목이 없습니다.</p></div>';
+    return;
+  }
+  var html='';
+  acts.forEach(function(a){
+    var col=a.level==='neg'?'var(--neg)':a.level==='warn'?'var(--warn)':'var(--blue)';
+    var icon=a.level==='neg'?'🔴':a.level==='warn'?'🟡':'🔵';
+    html+='<div class="card" style="border-left:3px solid '+col+';margin-bottom:8px;">';
+    html+='<p style="font-size:14px;font-weight:700;margin-bottom:6px;">'+icon+' '+a.title+'</p>';
+    html+='<p style="font-size:12px;color:var(--ink-2);margin-bottom:3px;"><strong style="color:var(--ink-3);">근거</strong> · '+a.evidence+'</p>';
+    html+='<p style="font-size:12px;color:var(--ink-2);margin-bottom:3px;"><strong style="color:var(--ink-3);">원인</strong> · '+a.cause+'</p>';
+    html+='<p style="font-size:12px;color:'+col+';font-weight:600;">→ '+a.action+'</p>';
+    html+='</div>';
+  });
+  el.innerHTML=html;
+}
+
+/* ---------- 창고 상세 드릴다운 ---------- */
+function bucketKey(dateStr,gran){
+  if(gran==='day')return dateStr;
+  var d=new Date(dateStr+'T00:00:00');
+  if(gran==='month')return dateStr.slice(0,7);
+  var day=d.getDay(); var diff=(day===0?6:day-1);
+  d.setDate(d.getDate()-diff);
+  return d.toISOString().slice(0,10)+' 주';
+}
+function renderOpsDetail(){
+  var el=document.getElementById('ops-detail'); if(!el)return;
+  var wh=document.getElementById('ops-wh').value;
+  var sel=document.getElementById('ops-date-sel');
+  var baseDate=sel?sel.value:null;
+  if(!baseDate){el.innerHTML='<p style="font-size:13px;color:var(--ink-3);">날짜 데이터가 없습니다.</p>';return;}
+
+  var span=opsGran==='day'?14:opsGran==='week'?60:180;
+  var dates=[baseDate].concat(recentDates(baseDate,span)).sort();
+  var buckets={};
+  dates.forEach(function(d){
+    var mgr=getMgrFrom(opsAllMgr,d,wh);
+    var out=getOutFrom(opsAllOut,d);
+    var m=opsMetrics(out,mgr,wh);
+    if(!m)return;
+    var k=bucketKey(d,opsGran);
+    if(!buckets[k])buckets[k]={key:k,days:0,score:0,total:0,single:0,multi:0,pickInput:0,packInput:0,otherInput:0,etc:0,head:0,packTarget:0,etcTasks:{},notes:[]};
+    var b=buckets[k];
+    b.days++; b.score+=m.score||0; b.total+=m.total||0; b.single+=m.single||0; b.multi+=m.multi||0;
+    b.pickInput+=m.pickInput; b.packInput+=m.packInput; b.otherInput+=m.otherInput;
+    b.etc+=m.etcManHours; b.head+=m.headcount; b.packTarget+=m.packTarget||0;
+    if(mgr&&mgr.etcWork&&mgr.etcWork.tasks){
+      Object.keys(mgr.etcWork.tasks).forEach(function(tk){
+        b.etcTasks[tk]=(b.etcTasks[tk]||0)+(mgr.etcWork.tasks[tk].manHours||0);
+      });
+    }
+    if(mgr&&mgr.note)b.notes.push(d+': '+mgr.note);
+  });
+  var list=Object.values(buckets).sort(function(a,b){return a.key<b.key?1:-1;}).slice(0,14);
+  if(!list.length){el.innerHTML='<p style="font-size:13px;color:var(--ink-3);">해당 기간에 '+WH_LABELS[wh]+' 데이터가 없습니다.</p>';return;}
+
+  var g=(goalsCache&&goalsCache[wh])||{};
+  var html='<div class="card"><div style="overflow-x:auto;"><table class="data-table"><thead><tr>';
+  html+='<th>'+(opsGran==='day'?'날짜':opsGran==='week'?'주':'월')+'</th>';
+  html+='<th class="num">송장 건수</th><th class="num">출고 수량<br><span style="font-weight:400;text-transform:none;">(가중)</span></th>';
+  html+='<th class="num">단품</th><th class="num">합포장</th><th class="num">평균<br>합포장</th>';
+  html+='<th class="num">피킹<br>투입시간</th><th class="num">포장<br>투입시간</th>';
+  html+='<th class="num">피킹<br>생산성</th><th class="num">포장<br>생산성</th>';
+  html+='<th class="num">기타<br>투입시간</th><th class="num">가동률</th>';
+  html+='</tr></thead><tbody>';
+  list.forEach(function(b){
+    var pickEff=b.pickInput>0?Math.round(b.score/b.pickInput*10)/10:null;
+    var packEff=b.packInput>0?Math.round(b.packTarget/b.packInput*10)/10:null;
+    var totIn=b.pickInput+b.packInput+b.otherInput;
+    var util=totIn>0?Math.round((b.pickInput+b.packInput)/totIn*100):null;
+    var avgB=b.multi>0?Math.round((b.score-b.single)/b.multi*10)/10:null;
+    function effCell(v,t){
+      if(v===null)return '<td class="num" style="color:var(--ink-3);">—</td>';
+      if(!t)return '<td class="num" style="font-weight:600;">'+v+'</td>';
+      var r=Math.round(v/t*100);
+      var c=r>=100?'var(--pos)':r>=85?'var(--warn)':'var(--neg)';
+      return '<td class="num" style="font-weight:600;color:'+c+';">'+v+'<br><span style="font-size:10px;font-weight:400;">'+r+'%</span></td>';
+    }
+    html+='<tr><td style="font-weight:600;">'+b.key+(b.days>1?' <span style="font-size:10px;color:var(--ink-3);">('+b.days+'일)</span>':'')+'</td>';
+    html+='<td class="num">'+b.total.toLocaleString()+'</td>';
+    html+='<td class="num">'+b.score.toLocaleString()+'</td>';
+    html+='<td class="num">'+b.single.toLocaleString()+'</td>';
+    html+='<td class="num">'+b.multi.toLocaleString()+'</td>';
+    html+='<td class="num">'+(avgB!==null?avgB:'—')+'</td>';
+    html+='<td class="num">'+b.pickInput+'</td>';
+    html+='<td class="num">'+b.packInput+'</td>';
+    html+=effCell(pickEff,g.pickTarget);
+    html+=effCell(packEff,g.packTarget);
+    html+='<td class="num" style="color:'+(b.otherInput>0?'var(--warn)':'var(--ink-3)')+';">'+(b.otherInput||'—')+'</td>';
+    html+='<td class="num">'+(util!==null?util+'%':'—')+'</td>';
+    html+='</tr>';
+  });
+  html+='</tbody></table></div>';
+  html+='<p style="font-size:11px;color:var(--ink-3);margin-top:8px;">시간당 처리량 = 처리량 ÷ 해당 작업 투입시간(1인 기준) · 색상은 목표 달성률 (초록 ≥100% / 노랑 ≥85% / 빨강 &lt;85%)</p>';
+  html+='</div>';
+
+  // 기타 업무 breakdown
+  var top=list[0];
+  if(top&&Object.keys(top.etcTasks).length){
+    html+='<div class="card"><p class="card-title">'+top.key+' 기타 업무 내역</p>';
+    html+='<div style="display:flex;flex-direction:column;gap:6px;">';
+    var maxV=Math.max.apply(null,Object.values(top.etcTasks));
+    ETC_TASKS.forEach(function(t){
+      var v=top.etcTasks[t.k]; if(!v)return;
+      var w=maxV>0?Math.round(v/maxV*100):0;
+      html+='<div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span>'+t.label+'</span><span style="color:var(--ink-2);font-weight:600;">'+v+'h</span></div>';
+      html+='<div style="height:10px;background:var(--line);border-radius:5px;overflow:hidden;"><div style="height:100%;width:'+w+'%;background:var(--orange);border-radius:5px;"></div></div></div>';
+    });
+    html+='</div></div>';
+  }
+  if(top&&top.notes.length){
+    html+='<div class="card"><p class="card-title">특이사항</p>';
+    top.notes.forEach(function(n){html+='<p style="font-size:12px;color:var(--ink-2);margin-bottom:3px;">· '+n+'</p>';});
+    html+='</div>';
+  }
+  el.innerHTML=html;
+}
+
+/* ---------- 운영 진단 전체 갱신 ---------- */
+async function refreshOps(){
+  var sel=document.getElementById('ops-date-sel');
+  var date=sel?sel.value:null;
+  if(!date){return;}
+  await loadOpsData(true);
+  var goals=await loadGoals();
+  var comp=renderCompleteness(date);
+  var rows=renderOpsScorecards(date,goals);
+  renderOpsActions(buildOpsActions(date,rows,comp));
+  renderOpsDetail();
+  var u=document.getElementById('ops-updated');
+  if(u)u.textContent='계산 기준일 '+date+' · 갱신 '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+}
+
+// 초기화
+renderEtcRows();
 
 </script>
 </body>
