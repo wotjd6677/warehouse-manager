@@ -1015,8 +1015,8 @@ function warehouse(code){
   const s=String(code||'').trim().toLowerCase();
   if(s===''||s==='nan')return '1창고';
   if(s.startsWith('신hb')||s.startsWith('신창고'))return '2창고';
-  if(s.startsWith('1hb'))return '1창고(HB)';
-  if(s.startsWith('3hb'))return '3창고(HB)';
+  if(s.startsWith('1hb'))return '1창고';
+  if(s.startsWith('3hb'))return '3창고';
   if(s.startsWith('2창고'))return '2창고';
   if(s.startsWith('3창고'))return '3창고';
   if(s.startsWith('1pr')||s.startsWith('3pr'))return '프레스룸';
@@ -1066,8 +1066,9 @@ function ingest(rows){
       p:(cPn>=0&&cDn>=0)?mkcode(r[cPn],r[cDn]):''};
     if(!DATA[num])DATA[num]=[];
     const dup=DATA[num].find(x=>x.i===item.i&&x.o===item.o);
-    if(!dup){DATA[num].push(item);added++}
+    if(!dup){DATA[num].push(item);markAdded(num,item);added++}
     else{
+      markAdded(num,item);
       // 이미 있는 품목이라도 사유/유형이 비어있으면 새 값으로 보충 (예전 데이터에 사유 없던 경우)
       if((!dup.r||dup.r==='nan'||dup.r==='')&&item.r){dup.r=item.r;added++}
       if((!dup.c||dup.c==='nan'||dup.c==='')&&item.c){dup.c=item.c}
@@ -1075,15 +1076,65 @@ function ingest(rows){
   }
   return added;
 }
+// ── 조회DATA 영속화: 올린 클레임 엑셀이 새로고침 후에도 유지되도록 저장/복원 ──
+const DATA_KEY='return_claimdata_v1';
+// 원본 HTML에 박힌 DATA는 새로고침해도 살아있으므로, 엑셀로 '새로 추가된 것'만 저장한다.
+var ADDED={};   // {송장: [item,...]} — 이번 세션 이후 추가/보충된 것만
+function markAdded(num,item){
+  if(!ADDED[num])ADDED[num]=[];
+  const dup=ADDED[num].find(x=>x.i===item.i&&x.o===item.o);
+  if(!dup)ADDED[num].push(item);
+}
+function persistData(){
+  try{
+    localStorage.setItem(DATA_KEY,JSON.stringify(ADDED));
+    return true;
+  }catch(e){
+    showToast('⚠ 조회데이터 저장 실패(용량 초과). 새로고침 시 초기화될 수 있습니다.',1);
+    return false;
+  }
+}
+function restoreData(){
+  try{
+    const raw=localStorage.getItem(DATA_KEY);
+    if(!raw)return 0;
+    const saved=JSON.parse(raw);
+    if(!saved||typeof saved!=='object')return 0;
+    let merged=0;
+    Object.keys(saved).forEach(num=>{
+      const arr=saved[num];
+      if(!Array.isArray(arr))return;
+      ADDED[num]=arr.slice();
+      if(!DATA[num]){DATA[num]=arr.slice();merged+=arr.length;return;}
+      arr.forEach(it=>{
+        const dup=DATA[num].find(x=>x.i===it.i&&x.o===it.o);
+        if(!dup){DATA[num].push(it);merged++;}
+        else{ if((!dup.r||dup.r==='nan'||dup.r==='')&&it.r)dup.r=it.r;
+              if((!dup.c||dup.c==='nan'||dup.c==='')&&it.c)dup.c=it.c; }
+      });
+    });
+    return merged;
+  }catch(e){return 0;}
+}
 function handleFiles(files){
   let done=0,tot=0;
   [...files].forEach(f=>{const reader=new FileReader();
     reader.onload=e=>{try{const wb=XLSX.read(e.target.result,{type:'array'});
       const ws=wb.Sheets[wb.SheetNames[0]];tot+=ingest(XLSX.utils.sheet_to_json(ws,{header:1,defval:''}));
     }catch(err){showToast('⚠ '+f.name+' 실패',1)}
-    if(++done===files.length){refreshStats();showToast(`✓ ${tot.toLocaleString()}건 추가`);inv.focus()}};
+    if(++done===files.length){
+      const ok=persistData();
+      refreshStats();
+      showToast(`✓ ${tot.toLocaleString()}건 추가${ok?' (저장됨 · 새로고침해도 유지)':''}`);
+      inv.focus();
+    }};
     reader.readAsArrayBuffer(f)});
 }
+// 페이지 로드 시 저장된 조회데이터 복원
+(function(){
+  const n=restoreData();
+  if(n>0)setTimeout(()=>{try{refreshStats();}catch(e){}},100);
+})();
 drop.addEventListener('click',()=>fileInput.click());
 fileInput.addEventListener('change',e=>handleFiles(e.target.files));
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});
