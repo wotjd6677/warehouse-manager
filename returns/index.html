@@ -173,6 +173,13 @@
       <input type="date" id="dayDate" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);font-size:13px">
       <button class="btn" id="dayReportBtn" style="background:#2d7d46;color:#fff;border-color:#2d7d46">📅 당일 실적 다운로드</button>
     </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+      <span style="font-size:13px;color:var(--muted)">🎁 기부정산 기간</span>
+      <input type="date" id="gibuFrom" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);font-size:13px">
+      <span style="color:var(--muted)">~</span>
+      <input type="date" id="gibuTo" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);font-size:13px">
+      <button class="btn" id="gibuBtn" style="background:#b8860b;color:#fff;border-color:#b8860b">🎁 기부 정산서 다운로드</button>
+    </div>
     <div class="row" style="display:none">
       <button class="btn green" id="sabangBtn">📦 사방넷 입고만</button>
       <button class="btn" id="exportBtn">📥 통합 저장(전체)</button>
@@ -351,6 +358,26 @@ const PRICEMAP = {"100000-0002":{"loc":"MJ0001001","v":9614},"100000-0004":{"loc
 const PRICE_MULT = 2.4;
 function priceOf(code){const m=PRICEMAP[String(code||"").trim()];return (m&&m.v!=null)?Math.round(m.v*PRICE_MULT):"";}
 function locOf(code){const m=PRICEMAP[String(code||"").trim()];return m?(m.loc||""):"";}
+
+// ===== 상품코드 → 브랜드 매핑 (DATA의 b필드에서 1회 구축) =====
+const _BRSET=['무타공마켓','홈비','프레스룸','케리프','레몬아트'];
+const BRANDMAP=(function(){
+  const map={};
+  try{
+    Object.values(DATA).forEach(arr=>(arr||[]).forEach(it=>{
+      if(it&&it.p&&it.b&&_BRSET.includes(it.b)&&!map[String(it.p).trim()]) map[String(it.p).trim()]=it.b;
+    }));
+  }catch(e){}
+  return map;
+})();
+function brandOf(code,raw){
+  if(_BRSET.includes(raw)) return raw;
+  const c=String(code||'').trim();
+  if(BRANDMAP[c]) return BRANDMAP[c];
+  const pref=c.split('-')[0];
+  for(const k in BRANDMAP){ if(k.split('-')[0]===pref) return BRANDMAP[k]; }
+  return '기타(미확인)';
+}
 
 const LS_KEY='return_inbound_v1';
 // 노트북 식별자 — 백업/병합 시 어느 기기 데이터인지 구분용. 처음 한 번 만들어 localStorage에 보관.
@@ -1428,14 +1455,16 @@ document.getElementById('dayReportBtn').addEventListener('click',()=>{
       const opt=(it.o&&it.o!=='nan')?it.o:'';
       // 입고(양품화) 수량
       if((it.inQ||0)>0){
-        inRows.push([hm(when), it.i, opt, it.b, it.w, it.p||'', it.inQ, (s.mis?'오배송':s.num)]);
+        {const _pr=priceOf(it.p);const _amt=(_pr!==''?_pr*Number(it.inQ||0):'');
+         inRows.push([hm(when), it.i, opt, it.b, it.w, it.p||'', it.inQ, _pr, _amt, (s.mis?'오배송':s.num)]);}
       }
       // 폐기/기부 수량 (rejs = {"폐기|사유":수량})
       if(it.rejs){
         Object.entries(it.rejs).forEach(([tag,q])=>{
           if(!q)return;
           const parts=String(tag).split('|');const disp=parts[0]||'폐기';const reason=parts[1]||'';
-          const row=[hm(when), it.i, opt, it.b, it.w, it.p||'', q, reason, (s.mis?'오배송':s.num)];
+          const _pr=priceOf(it.p);const _amt=(_pr!==''?_pr*Number(q||0):'');
+          const row=[hm(when), it.i, opt, it.b, it.w, it.p||'', q, _pr, _amt, reason, (s.mis?'오배송':s.num)];
           if(disp==='기부')donRows.push(row);else disRows.push(row);
         });
       }
@@ -1451,40 +1480,43 @@ document.getElementById('dayReportBtn').addEventListener('click',()=>{
 
   // ① 입고(양품화)
   {
-    const a=[['['+dayStr+'] 입고(양품화) — 사방넷 반영 대상','','','','','','',''],
-      ['처리시각','품목명','옵션','브랜드','창고','상품코드','입고수량','원송장']];
+    const a=[['['+dayStr+'] 입고(양품화) — 사방넷 반영 대상','','','','','','','','',''],
+      ['처리시각','품목명','옵션','브랜드','창고','상품코드','입고수량','판매가','판매금액','원송장']];
     inRows.sort((x,y)=>String(x[4]).localeCompare(String(y[4]))||String(x[1]).localeCompare(String(y[1])));
     inRows.forEach(r=>a.push(r));
     const tot=inRows.reduce((s,r)=>s+Number(r[6]||0),0);
-    a.push([]);a.push(['합계','','','','','',tot,'']);
+    const amtTot=inRows.reduce((s,r)=>s+Number(r[8]||0),0);
+    a.push([]);a.push(['합계','','','','','',tot,'',amtTot,'']);
     const ws=XLSX.utils.aoa_to_sheet(a);
-    ws['!cols']=[{wch:9},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:8},{wch:15}];
+    ws['!cols']=[{wch:9},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:8},{wch:10},{wch:12},{wch:15}];
     XLSX.utils.book_append_sheet(wb,ws,'입고');
     sumInfo.push('입고 '+tot);
   }
   // ② 폐기
   {
-    const a=[['['+dayStr+'] 폐기','','','','','','',''],
-      ['처리시각','품목명','옵션','브랜드','창고','상품코드','수량','사유','원송장']];
+    const a=[['['+dayStr+'] 폐기','','','','','','','','',''],
+      ['처리시각','품목명','옵션','브랜드','창고','상품코드','수량','판매가','판매금액','사유','원송장']];
     disRows.sort((x,y)=>String(x[1]).localeCompare(String(y[1])));
-    disRows.forEach(r=>a.push([r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8]]));
+    disRows.forEach(r=>a.push([r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8],r[9],r[10]]));
     const tot=disRows.reduce((s,r)=>s+Number(r[6]||0),0);
-    a.push([]);a.push(['합계','','','','','',tot,'','']);
+    const amtTot=disRows.reduce((s,r)=>s+Number(r[8]||0),0);
+    a.push([]);a.push(['합계','','','','','',tot,'',amtTot,'','']);
     const ws=XLSX.utils.aoa_to_sheet(a);
-    ws['!cols']=[{wch:9},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:6},{wch:14},{wch:15}];
+    ws['!cols']=[{wch:9},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:6},{wch:10},{wch:12},{wch:14},{wch:15}];
     XLSX.utils.book_append_sheet(wb,ws,'폐기');
     sumInfo.push('폐기 '+tot);
   }
   // ③ 기부
   {
-    const a=[['['+dayStr+'] 기부','','','','','','',''],
-      ['처리시각','품목명','옵션','브랜드','창고','상품코드','수량','사유','원송장']];
+    const a=[['['+dayStr+'] 기부','','','','','','','','',''],
+      ['처리시각','품목명','옵션','브랜드','창고','상품코드','수량','판매가','판매금액','사유','원송장']];
     donRows.sort((x,y)=>String(x[1]).localeCompare(String(y[1])));
-    donRows.forEach(r=>a.push([r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8]]));
+    donRows.forEach(r=>a.push([r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8],r[9],r[10]]));
     const tot=donRows.reduce((s,r)=>s+Number(r[6]||0),0);
-    a.push([]);a.push(['합계','','','','','',tot,'','']);
+    const amtTot=donRows.reduce((s,r)=>s+Number(r[8]||0),0);
+    a.push([]);a.push(['합계','','','','','',tot,'',amtTot,'','']);
     const ws=XLSX.utils.aoa_to_sheet(a);
-    ws['!cols']=[{wch:9},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:6},{wch:14},{wch:15}];
+    ws['!cols']=[{wch:9},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:6},{wch:10},{wch:12},{wch:14},{wch:15}];
     XLSX.utils.book_append_sheet(wb,ws,'기부');
     sumInfo.push('기부 '+tot);
   }
@@ -1500,20 +1532,115 @@ document.getElementById('dayReportBtn').addEventListener('click',()=>{
     donRows.forEach(r=>whset.add(r[4]||'미지정'));
     const sumBy=(rows,wh)=>rows.filter(r=>(r[4]||'미지정')===wh).reduce((s,r)=>s+Number(r[6]||0),0);
     const whs=[...whset].sort();
-    const a=[['['+dayStr+'] 당일 처리 요약','','',''],[],
-      ['창고','입고(양품화)','폐기','기부']];
-    whs.forEach(wh=>{a.push([wh, sumBy(inRows,wh), sumBy(disRows,wh), sumBy(donRows,wh)]);});
-    a.push(['── 전체 합계 ──', inTot, disTot, donTot]);
+    const amtBy=(rows,wh)=>rows.filter(r=>(r[4]||'미지정')===wh).reduce((s,r)=>s+Number(r[8]||0),0);
+    const inAmt=inRows.reduce((s,r)=>s+Number(r[8]||0),0);
+    const disAmt=disRows.reduce((s,r)=>s+Number(r[8]||0),0);
+    const donAmt=donRows.reduce((s,r)=>s+Number(r[8]||0),0);
+    const a=[['['+dayStr+'] 당일 처리 요약','','','','','',''],[],
+      ['창고','입고(양품화)','폐기','기부','입고금액','폐기금액','기부금액']];
+    whs.forEach(wh=>{a.push([wh, sumBy(inRows,wh), sumBy(disRows,wh), sumBy(donRows,wh), amtBy(inRows,wh), amtBy(disRows,wh), amtBy(donRows,wh)]);});
+    a.push(['── 전체 합계 ──', inTot, disTot, donTot, inAmt, disAmt, donAmt]);
     a.push([]);
-    a.push(['당일 총 처리량(입고+폐기+기부)', inTot+disTot+donTot,'','']);
+    // 브랜드별 집계 (col3=브랜드, col6=수량, col8=금액)
+    const brset=new Set();
+    inRows.forEach(r=>brset.add(r[3]||'미지정'));
+    disRows.forEach(r=>brset.add(r[3]||'미지정'));
+    donRows.forEach(r=>brset.add(r[3]||'미지정'));
+    const sumByBr=(rows,br)=>rows.filter(r=>(r[3]||'미지정')===br).reduce((s,r)=>s+Number(r[6]||0),0);
+    const amtByBr=(rows,br)=>rows.filter(r=>(r[3]||'미지정')===br).reduce((s,r)=>s+Number(r[8]||0),0);
+    const brs=[...brset].sort();
+    a.push(['[브랜드별]','입고(양품화)','폐기','기부','입고금액','폐기금액','기부금액']);
+    brs.forEach(br=>{a.push([br, sumByBr(inRows,br), sumByBr(disRows,br), sumByBr(donRows,br), amtByBr(inRows,br), amtByBr(disRows,br), amtByBr(donRows,br)]);});
+    a.push(['── 전체 합계 ──', inTot, disTot, donTot, inAmt, disAmt, donAmt]);
+    a.push([]);
+    a.push(['당일 총 처리량(입고+폐기+기부)', inTot+disTot+donTot,'','','','','']);
+    a.push(['당일 회수금액(입고)', inAmt,'','','','','']);
+    a.push(['당일 손실금액(폐기+기부)', disAmt+donAmt,'','','','','']);
     const ws=XLSX.utils.aoa_to_sheet(a);
-    ws['!cols']=[{wch:20},{wch:14},{wch:10},{wch:10}];
+    ws['!cols']=[{wch:24},{wch:12},{wch:8},{wch:8},{wch:12},{wch:11},{wch:11}];
     XLSX.utils.book_append_sheet(wb,ws,'요약');
   }
 
   const fn='당일실적_'+dayStr.replace(/-/g,'')+'.xlsx';
   XLSX.writeFile(wb,fn);
   showToast('📅 '+dayStr+' 다운로드 — '+sumInfo.join(' / '));
+});
+
+// ===== 🎁 기부 정산서 다운로드 — 기간 지정, 브랜드별 요약+품목상세 =====
+document.getElementById('gibuBtn').addEventListener('click',()=>{
+  const fromStr=document.getElementById('gibuFrom').value;
+  const toStr=document.getElementById('gibuTo').value;
+  if(!fromStr||!toStr){showToast('시작일과 종료일을 선택하세요',1);return;}
+  const fromT=new Date(fromStr+'T00:00:00').getTime();
+  const toT=new Date(toStr+'T23:59:59').getTime();
+  if(fromT>toT){showToast('기간이 올바르지 않습니다',1);return;}
+
+  // rejected 중 기부 + 기간 필터 → 품목 통합
+  const BRORDER=['무타공마켓','홈비','프레스룸','케리프','레몬아트','기타(미확인)'];
+  const bkey=b=>{const i=BRORDER.indexOf(b);return i<0?98:i;};
+  const agg={}; // key: brand|code|opt
+  Object.values(rejected).forEach(r=>{
+    const d=splitDisp(r.reason);
+    if(d.disp!=='기부')return;
+    const t=r.last||0;
+    if(t<fromT||t>toT)return;
+    const code=String(r.p||'');
+    const brand=brandOf(code,r.b);
+    const opt=(r.o&&r.o!=='nan')?r.o:'';
+    const key=brand+'|'+code+'|'+opt;
+    if(!agg[key])agg[key]={brand,code,name:r.i,opt,q:0,price:(priceOf(code)!==''?priceOf(code):null)};
+    agg[key].q+=r.qty;
+  });
+  const items=Object.values(agg);
+  if(!items.length){showToast('해당 기간 기부 내역이 없습니다',1);return;}
+  items.forEach(it=>it.amt=(it.price!=null?it.price*it.q:0));
+  items.sort((a,b)=>bkey(a.brand)-bkey(b.brand)||b.amt-a.amt);
+
+  // 브랜드별 합계
+  const br={}; items.forEach(it=>{if(!br[it.brand])br[it.brand]=[0,0];br[it.brand][0]+=it.q;br[it.brand][1]+=it.amt;});
+  const brands=Object.keys(br).sort((a,b)=>bkey(a)-bkey(b));
+  const totQ=items.reduce((s,it)=>s+it.q,0), totA=items.reduce((s,it)=>s+it.amt,0);
+
+  const wb=XLSX.utils.book_new();
+  // 요약 시트
+  const s1=[['기부 물품 정산서'],['집계기간: '+fromStr+' ~ '+toStr+'  |  기준: 양품화불가(기부) 전체'],[],
+    ['총 기부 수량',totQ,'총 기부 금액',totA],[],['브랜드','기부 수량','기부 금액','금액 비중']];
+  brands.forEach(b=>s1.push([b,br[b][0],br[b][1],totA?(br[b][1]/totA):0]));
+  s1.push(['합계',totQ,totA,1]);
+  s1.push([]);s1.push(["※ 금액은 판매가 기준. '기타(미확인)'은 상품 마스터에 없는 품번으로 브랜드 확인이 필요합니다."]);
+  const ws1=XLSX.utils.aoa_to_sheet(s1);
+  ws1['!cols']=[{wch:20},{wch:14},{wch:16},{wch:12}];
+  // 금액/비중 서식
+  for(let i=0;i<brands.length+1;i++){
+    const rr=7+i;
+    const ac=XLSX.utils.encode_cell({r:rr-1,c:2}); if(ws1[ac])ws1[ac].z='#,##0"원"';
+    const pc=XLSX.utils.encode_cell({r:rr-1,c:3}); if(ws1[pc])ws1[pc].z='0.0%';
+  }
+  const tac=XLSX.utils.encode_cell({r:3,c:3}); if(ws1[tac])ws1[tac].z='#,##0"원"';
+  XLSX.utils.book_append_sheet(wb,ws1,'기부정산요약');
+
+  // 품목상세 시트
+  const s2=[['No','브랜드','품목명','옵션','수량','판매가','기부금액']];
+  let idx=1;
+  brands.forEach(b=>{
+    s2.push(['▚ '+b,'','','','','','']);
+    items.filter(it=>it.brand===b).forEach(it=>{
+      s2.push([idx++,it.brand,it.name,it.opt,it.q,(it.price!=null?it.price:'단가확인필요'),(it.price!=null?it.amt:'')]);
+    });
+    s2.push(['',b+' 소계','','',br[b][0],'',br[b][1]]);
+  });
+  s2.push(['','총 합계','','',totQ,'',totA]);
+  const ws2=XLSX.utils.aoa_to_sheet(s2);
+  ws2['!cols']=[{wch:6},{wch:12},{wch:40},{wch:22},{wch:8},{wch:12},{wch:14}];
+  // 금액 서식
+  for(let r=1;r<s2.length;r++){
+    const pc=XLSX.utils.encode_cell({r,c:5}); if(ws2[pc]&&typeof ws2[pc].v==='number')ws2[pc].z='#,##0"원"';
+    const ac=XLSX.utils.encode_cell({r,c:6}); if(ws2[ac]&&typeof ws2[ac].v==='number')ws2[ac].z='#,##0"원"';
+  }
+  XLSX.utils.book_append_sheet(wb,ws2,'품목상세');
+
+  XLSX.writeFile(wb,'기부정산서_'+fromStr.replace(/-/g,'')+'_'+toStr.replace(/-/g,'')+'.xlsx');
+  showToast('🎁 기부정산서 다운로드 — '+totQ+'개 / '+totA.toLocaleString()+'원');
 });
 
 document.getElementById('exportBtn').addEventListener('click',()=>{
@@ -1564,12 +1691,28 @@ document.getElementById('exportBtn').addEventListener('click',()=>{
   const logKeys=Object.keys(scanLog);
   if(logKeys.length){
     const a4=[['원송장','조회시각','처리상태','처리시각','처분구분','사유','품목명','옵션','브랜드','창고','상품코드','수량','판매가','판매금액','옵션로케이션']];
+    // 행 분해 원칙: 송장 단위 플래그(done/rej)가 아니라 품목의 inQ/rejs를 기준으로 행을 만든다.
+    // 부분입고 후 나머지를 불가처리하면 done/rej가 동시에 켜지므로 송장 단위로는 표현이 불가능하다.
+    // 이 때문에 과거 export는 수기 불가건(done=true,rej=true)을 '입고'로 찍어 재입고에 이중집계됐다.
     logKeys.map(k=>scanLog[k]).sort((a,b)=>a.t-b.t).forEach(s=>{
-      const dd=s.rej?splitDisp(s.reason):null;
-      const status=s.done?'입고':(s.rej?(dd.disp):'조회만');
+      const tScan=fmt(s.t), tDone=(s.done||s.rej)?fmt(s.dt):'';
       (s.items||[]).forEach(it=>{
-        a4.push([s.num, fmt(s.t), status, (s.done||s.rej)?fmt(s.dt):'', dd?dd.disp:'', dd?dd.reason:'',
-          it.i,(it.o&&it.o!=='nan')?it.o:'',it.b,it.w,it.p||'',it.q, priceOf(it.p), (priceOf(it.p)!==''?priceOf(it.p)*Number(it.q||0):''), locOf(it.p)]);
+        const opt=(it.o&&it.o!=='nan')?it.o:'';
+        const pr=priceOf(it.p);
+        const push=(status,disp,reason,qty)=>{
+          const n=Number(qty||0);
+          a4.push([s.num, tScan, status, (status==='조회만'?'':tDone), disp, reason,
+            it.i, opt, it.b, it.w, it.p||'', n, pr, (pr!==''?pr*n:''), locOf(it.p)]);
+        };
+        const inQ=Number(it.inQ||0);
+        let rejN=0;
+        if(inQ>0) push('입고','','',inQ);              // 실제 재고 편입분만
+        Object.entries(it.rejs||{}).forEach(([tag,q])=>{
+          const n=Number(q||0); if(n<=0)return;
+          const d=splitDisp(tag); rejN+=n;
+          push(d.disp, d.disp, d.reason, n);           // 처분구분별로 행 분리
+        });
+        if(inQ<=0 && rejN<=0) push('조회만','','',it.q);
       });
     });
     const ws4=XLSX.utils.aoa_to_sheet(a4);
