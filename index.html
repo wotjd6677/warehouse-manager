@@ -960,11 +960,11 @@ function calcOutbound(rows){
   var wg=buckets.map(function(b,i){return whGroup(b,cats[i]);});
   var stats={};
   WHS.forEach(function(wh){
-    var pc={};
-    rows.forEach(function(_,i){if(wg[i]===wh){var k=phoneKeys[i];pc[k]=(pc[k]||0)+1;}});
+    var pc={},qty=0,rowCnt=0;
+    rows.forEach(function(r,i){if(wg[i]===wh){var k=phoneKeys[i];pc[k]=(pc[k]||0)+1;qty+=parseInt(r['수량'])||0;rowCnt++;}});
     var score=0,single=0,multi=0,total=0;
     Object.keys(pc).forEach(function(k){var sz=pc[k];score+=bundleWeight(sz);total++;if(sz===1)single++;else multi++;});
-    stats[wh]={score:Math.round(score),single:single,multi:multi,total:total};
+    stats[wh]={score:Math.round(score),single:single,multi:multi,total:total,qty:qty,rows:rowCnt};
   });
   return stats;
 }
@@ -1012,13 +1012,24 @@ async function handleExcel(input){
       var dates=Object.keys(groups).filter(function(d){return d && d!=='미지정';}).sort();
       if(!dates.length){showToast('처리할 날짜를 찾지 못했습니다.');return;}
 
+      // 중복 업로드 점검: 이미 데이터가 있는 날짜는 덮어쓰기 전 확인
+      var existing=null;
+      try{ existing=await window.dbGet('out'); }catch(e){}
+      var dups=dates.filter(function(d){return existing&&existing[d.replace(/-/g,'')];});
+      if(dups.length){
+        var dupMsg='⚠️ 이미 주문 데이터가 있는 날짜 '+dups.length+'개를 덮어씁니다.\n\n'
+          +dups.slice(0,8).join(', ')+(dups.length>8?' 외 '+(dups.length-8)+'개':'')
+          +'\n\n같은 기간의 다른 엑셀을 올리면 기존 집계가 사라집니다. 계속할까요?';
+        if(!confirm(dupMsg)){showToast('업로드를 취소했습니다.');return;}
+      }
+
       // 각 날짜별로 집계 후 저장 (덮어쓰기)
       var done=0, totalRows=0;
       for(var i=0;i<dates.length;i++){
         var dt=dates[i];
         var rows=groups[dt];
         var stats=calcOutbound(rows);
-        await window.dbSet('out/'+dt.replace(/-/g,''),{date:dt,stats:stats,total:rows.length});
+        await window.dbSet('out/'+dt.replace(/-/g,''),{date:dt,stats:stats,total:rows.length,ts:Date.now()});
         done++; totalRows+=rows.length;
       }
       allOutCache=null;
@@ -2166,6 +2177,7 @@ function opsMetrics(out,mgr,wh){
 
   var score=s?s.score:null;                   // 합포장 가중 처리량
   var total=s?s.total:null;                   // 송장 건수
+  var qty=(s&&s.qty!==undefined)?s.qty:null;  // 실제 출고 상품 수량 (구버전 데이터는 null)
   var single=s?s.single:null, multi=s?s.multi:null;
   var pr=PACK_RATIO[wh]!==undefined?PACK_RATIO[wh]:1.0;
   var packTarget=total!==null?Math.round(total*pr):null;
@@ -2182,7 +2194,7 @@ function opsMetrics(out,mgr,wh){
   var bundleRatio=(total&&total>0)?Math.round(multi/total*100):null;
 
   return {pickEff,packEff,perPerson,utilization,pickInput,packInput,otherInput,totalInput,
-          etcManHours:etc,score,total,single,multi,packTarget,avgBundle,bundleRatio,headcount,
+          etcManHours:etc,score,total,qty,single,multi,packTarget,avgBundle,bundleRatio,headcount,
           grossH,haulH,retH,mgr};
 }
 
@@ -2229,6 +2241,7 @@ function assessCompleteness(date){
     if(m.score!==null&&m.score>0&&m.pickInput===0)warnings.push(WH_LABELS[wh]+': 출고 물량은 있는데 피킹 투입시간이 0 — 인원 입력 누락 의심');
     if(m.pickInput>0&&(m.score===null||m.score===0))warnings.push(WH_LABELS[wh]+': 인원은 투입됐는데 출고 물량 0 — 주문 데이터 확인 필요');
     if(m.pickEff!==null&&m.pickEff>500)warnings.push(WH_LABELS[wh]+': 피킹 처리량 '+m.pickEff+'건/시간 — 비정상적으로 높음, 시간 입력 확인');
+    if(m.qty!==null&&m.total!==null&&m.total>0&&m.qty<m.total)warnings.push(WH_LABELS[wh]+': 상품 수량('+m.qty+')이 송장 건수('+m.total+')보다 적음 — 엑셀 수량 컬럼 확인 필요');
   });
   return {pct,items,missing,etcMissing,warnings,provisional:pct<100};
 }
@@ -2237,9 +2250,16 @@ function renderCompleteness(date){
   var c=assessCompleteness(date);
   var col=c.pct>=100?'var(--pos)':c.pct>=70?'var(--warn)':'var(--neg)';
   el.style.borderLeftColor=col;
+  // 최근 업데이트 시간: 해당 날짜의 주문(out.ts)·매니저 입력(mgr.ts) 중 가장 최신
+  var tss=[];
+  var o=getOutFrom(opsAllOut,date); if(o&&o.ts)tss.push(o.ts);
+  WHS.forEach(function(wh){var m=getMgrFrom(opsAllMgr,date,wh); if(m&&m.ts)tss.push(m.ts);});
+  var lastTs=tss.length?Math.max.apply(null,tss):null;
+  var tsStr='';
+  if(lastTs){var td=new Date(lastTs);tsStr=' · 최근 업데이트 '+(td.getMonth()+1)+'/'+td.getDate()+' '+('0'+td.getHours()).slice(-2)+':'+('0'+td.getMinutes()).slice(-2);}
   var html='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">';
   html+='<span style="font-size:13px;font-weight:700;">📊 데이터 완성도 <span style="color:'+col+';font-size:18px;">'+c.pct+'%</span></span>';
-  html+='<span style="font-size:11px;color:var(--ink-3);">기준일 '+date+'</span></div>';
+  html+='<span style="font-size:11px;color:var(--ink-3);">기준일 '+date+tsStr+'</span></div>';
   html+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">';
   c.items.forEach(function(it){
     html+='<span style="font-size:11px;padding:3px 8px;border-radius:4px;background:'+(it.ok?'var(--pos-bg)':'var(--neg-bg)')+';color:'+(it.ok?'var(--pos)':'var(--neg)')+';">'+(it.ok?'✓ ':'✕ ')+it.label+'</span>';
@@ -2489,9 +2509,10 @@ function renderOpsDetail(){
     var m=opsMetrics(out,mgr,wh);
     if(!m)return;
     var k=bucketKey(d,opsGran);
-    if(!buckets[k])buckets[k]={key:k,days:0,score:0,total:0,single:0,multi:0,pickInput:0,packInput:0,otherInput:0,etc:0,head:0,packTarget:0,etcTasks:{},notes:[]};
+    if(!buckets[k])buckets[k]={key:k,days:0,score:0,total:0,qty:0,qtyN:0,single:0,multi:0,pickInput:0,packInput:0,otherInput:0,etc:0,head:0,packTarget:0,etcTasks:{},notes:[]};
     var b=buckets[k];
     b.days++; b.score+=m.score||0; b.total+=m.total||0; b.single+=m.single||0; b.multi+=m.multi||0;
+    if(m.qty!==null){b.qty+=m.qty;b.qtyN++;}
     b.pickInput+=m.pickInput; b.packInput+=m.packInput; b.otherInput+=m.otherInput;
     b.etc+=m.etcManHours; b.head+=m.headcount; b.packTarget+=m.packTarget||0;
     if(mgr&&mgr.etcWork&&mgr.etcWork.tasks){
@@ -2507,7 +2528,7 @@ function renderOpsDetail(){
   var g=(goalsCache&&goalsCache[wh])||{};
   var html='<div class="card"><div style="overflow-x:auto;"><table class="data-table"><thead><tr>';
   html+='<th>'+(opsGran==='day'?'날짜':opsGran==='week'?'주':'월')+'</th>';
-  html+='<th class="num">송장 건수</th><th class="num">출고 수량<br><span style="font-weight:400;text-transform:none;">(가중)</span></th>';
+  html+='<th class="num">송장 건수</th><th class="num">상품<br>수량</th><th class="num">가중<br>처리량</th>';
   html+='<th class="num">단품</th><th class="num">합포장</th><th class="num">평균<br>합포장</th>';
   html+='<th class="num">피킹<br>투입시간</th><th class="num">포장<br>투입시간</th>';
   html+='<th class="num">피킹<br>생산성</th><th class="num">포장<br>생산성</th>';
@@ -2528,6 +2549,7 @@ function renderOpsDetail(){
     }
     html+='<tr><td style="font-weight:600;">'+b.key+(b.days>1?' <span style="font-size:10px;color:var(--ink-3);">('+b.days+'일)</span>':'')+'</td>';
     html+='<td class="num">'+b.total.toLocaleString()+'</td>';
+    html+='<td class="num">'+(b.qtyN>0?b.qty.toLocaleString():'<span style="color:var(--ink-3);">—</span>')+'</td>';
     html+='<td class="num">'+b.score.toLocaleString()+'</td>';
     html+='<td class="num">'+b.single.toLocaleString()+'</td>';
     html+='<td class="num">'+b.multi.toLocaleString()+'</td>';
@@ -2541,7 +2563,7 @@ function renderOpsDetail(){
     html+='</tr>';
   });
   html+='</tbody></table></div>';
-  html+='<p style="font-size:11px;color:var(--ink-3);margin-top:8px;">시간당 처리량 = 처리량 ÷ 해당 작업 투입시간(1인 기준) · 색상은 목표 달성률 (초록 ≥100% / 노랑 ≥85% / 빨강 &lt;85%)</p>';
+  html+='<p style="font-size:11px;color:var(--ink-3);margin-top:8px;">상품 수량 = 엑셀 수량 컬럼 합계 (— 표시는 수량 집계 이전에 업로드된 날짜, 엑셀 재업로드 시 채워짐) · 가중 처리량 = 합포장 가중 점수 · 시간당 처리량 = 가중 처리량 ÷ 해당 작업 투입시간(1인 기준) · 색상은 목표 달성률 (초록 ≥100% / 노랑 ≥85% / 빨강 &lt;85%)</p>';
   html+='</div>';
 
   // 기타 업무 breakdown
