@@ -517,24 +517,57 @@ function refreshStats(){
 
 // ── 현재 열린 파레트 현황 바 (작업자가 가장 먼저 보는 영역) ──
 function palletQty(pid){const p=palletLog[pid];return p?p.items.reduce((s,x)=>s+(x.qty||0),0):0;}
+// 작업 대상 전체 파레트 수 (현장 실사값, 수동 입력) — 진척률의 분모
+const TOTPAL_KEY='return_total_pallets';
+function palletProgressHTML(){
+  const ps=Object.values(palletLog);
+  const closedN=ps.filter(p=>p.closed).length;
+  const goal=Number(localStorage.getItem(TOTPAL_KEY)||0);
+  const pct=goal?Math.min(100,Math.round(closedN/goal*1000)/10):0;
+  const label=goal?`${closedN} / ${goal} 파레트 · ${pct}%`:`${closedN} 파레트 마감 · 전체 수 미입력`;
+  return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="font-size:13px;color:var(--dim)">📊 전체 진척</div>
+      <button id="palGoalBtn" style="padding:3px 9px;font-size:12px;background:var(--card2,#2a2f3a);color:var(--txt);border:1px solid var(--line);border-radius:6px;cursor:pointer">✏ 전체 파레트 수</button>
+    </div>
+    <div style="font-size:18px;font-weight:700;color:var(--accent);margin:5px 0 8px">${esc(label)}</div>
+    <div style="height:9px;background:var(--line);border-radius:999px;overflow:hidden">
+      <div style="height:100%;width:${goal?pct:0}%;background:var(--accent);border-radius:999px;transition:width .3s"></div>
+    </div>
+    <div style="font-size:12px;color:var(--dim);margin-top:6px">진행 중 ${ps.length-closedN}개 · 누적 생성 ${ps.length}개</div>
+  </div>`;
+}
 function renderPalletBar(){
   const el=document.getElementById('palletBar');if(!el)return;
   // 열린 파레트만, 창고명 순으로
   const opens=Object.keys(openPallet).filter(wh=>{const id=openPallet[wh];return palletLog[id]&&!palletLog[id].closed;}).sort();
+  let html=palletProgressHTML();
   if(!opens.length){
-    el.innerHTML=`<div style="background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:14px 16px;color:var(--dim);font-size:14px">
+    html+=`<div style="background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:14px 16px;color:var(--dim);font-size:14px">
       📦 열린 파레트 없음 — 입고하면 창고별 파레트가 자동으로 시작됩니다.</div>`;
-    return;
+  }else{
+    html+=`<div style="display:flex;flex-wrap:wrap;gap:10px">`+opens.map(wh=>{
+      const id=openPallet[wh];const q=palletQty(id);const n=palletLog[id].items.length;
+      return `<div style="flex:1;min-width:220px;background:var(--panel);border:1px solid var(--accent);border-radius:12px;padding:12px 14px">
+        <div style="font-size:12px;color:var(--dim);margin-bottom:3px">📦 ${esc(wh)} · 현재 열린 파레트</div>
+        <div style="font-size:19px;font-weight:700;color:var(--accent);letter-spacing:.5px">${esc(id)}</div>
+        <div style="font-size:13px;color:var(--txt);margin:5px 0 9px">적재 ${n}건 · 수량 ${q}</div>
+        <button class="btn green" style="width:100%;font-size:14px" onclick="closePalletUI('${id}')">✅ 이 파레트 마감하고 입고파일 출력</button>
+      </div>`;
+    }).join('')+`</div>`;
   }
-  el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:10px">`+opens.map(wh=>{
-    const id=openPallet[wh];const q=palletQty(id);const n=palletLog[id].items.length;
-    return `<div style="flex:1;min-width:220px;background:var(--panel);border:1px solid var(--accent);border-radius:12px;padding:12px 14px">
-      <div style="font-size:12px;color:var(--dim);margin-bottom:3px">📦 ${esc(wh)} · 현재 열린 파레트</div>
-      <div style="font-size:19px;font-weight:700;color:var(--accent);letter-spacing:.5px">${esc(id)}</div>
-      <div style="font-size:13px;color:var(--txt);margin:5px 0 9px">적재 ${n}건 · 수량 ${q}</div>
-      <button class="btn green" style="width:100%;font-size:14px" onclick="closePalletUI('${id}')">✅ 이 파레트 마감하고 입고파일 출력</button>
-    </div>`;
-  }).join('')+`</div>`;
+  el.innerHTML=html;
+  const gb=document.getElementById('palGoalBtn');
+  if(gb)gb.addEventListener('click',()=>{
+    const cur=Number(localStorage.getItem(TOTPAL_KEY)||0);
+    const ans=prompt('작업 대상 전체 파레트 수\n\n현장에서 실사한 총 파레트 수를 입력하면\n마감된 파레트 대비 진척률이 표시됩니다.\n\n0 = 표시 안 함', String(cur||''));
+    if(ans===null)return;
+    const n=parseInt(ans);
+    if(isNaN(n)||n<0){showToast('0 이상의 숫자를 입력하세요',1);return;}
+    localStorage.setItem(TOTPAL_KEY,String(n));
+    renderPalletBar();
+    showToast(n?`📊 전체 파레트 ${n}개로 설정`:'전체 파레트 수 해제',0);
+  });
 }
 
 // 파레트 마감 (작업자 동작): 확인 → 입고파일 인쇄 → 새 파레트 자동 시작
@@ -720,18 +753,117 @@ function adjustInboundQty(i,o,w,newQty){
   if(typeof renderPalletBar==='function')renderPalletBar();
   showToast(`✏ 입고수량 수정: ${cur} → ${newQty}`,0);
 }
+// ===== 기부 제출(기부확인서 발행) 이력 =====
+// 제출 표시는 scanLog의 item에 직접 기록한다 (rejsDone=제출수량, rejsB=배치ID).
+// scanLog는 Firebase로 동기화되므로 한 대에서 제출 처리하면 전 기기에 반영된다.
+//   rejs[tag]      = 기부 처리 수량
+//   rejsDone[tag]  = 그중 확인서로 제출한 수량  → 미제출 = rejs - rejsDone
+function donaEach(fn){
+  Object.values(scanLog).forEach(s=>{
+    (s.items||[]).forEach(it=>{
+      Object.entries(it.rejs||{}).forEach(([tag,q])=>{
+        if(splitDisp(tag).disp!=='기부')return;
+        const n=Number(q||0);if(n<=0)return;
+        fn(s,it,tag,n,Math.min(Number((it.rejsDone||{})[tag]||0),n));
+      });
+    });
+  });
+}
+function donaStat(){
+  let total=0,done=0;
+  donaEach((s,it,tag,n,d)=>{total+=n;done+=d;});
+  return {total,done,pending:Math.max(total-done,0)};
+}
+function donaBatches(){
+  const m={};
+  donaEach((s,it,tag,n,d)=>{
+    if(d<=0)return;
+    const bid=(it.rejsB||{})[tag]||'(미상)';
+    if(!m[bid])m[bid]={id:bid,qty:0,at:0};
+    m[bid].qty+=d;
+    const t=Number(it.rejsAt||0);if(t>m[bid].at)m[bid].at=t;
+  });
+  return Object.values(m).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+}
+function donaNextId(){
+  const d=new Date();
+  const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+  let mx=0;
+  donaBatches().forEach(b=>{
+    const p=String(b.id).split('-');
+    if(p[0]==='D'&&p[1]===ymd)mx=Math.max(mx,parseInt(p[2])||0);
+  });
+  return 'D-'+ymd+'-'+(mx+1);
+}
+// 미제출 기부 전량을 하나의 배치로 묶어 제출 처리
+function donaSubmit(){
+  const st=donaStat();
+  if(st.pending<=0){showToast('미제출 기부가 없습니다',1);return;}
+  const bid=donaNextId();
+  if(!confirm('미제출 기부 '+st.pending+'개를 제출 처리합니다.\n배치번호: '+bid+'\n\n이후 발생하는 기부는 다음 확인서 대상이 됩니다.\n진행할까요?'))return;
+  const now=Date.now();
+  donaEach((s,it,tag,n,d)=>{
+    if(d>=n)return;
+    if(!it.rejsDone)it.rejsDone={};
+    if(!it.rejsB)it.rejsB={};
+    it.rejsDone[tag]=n;
+    it.rejsB[tag]=bid;
+    it.rejsAt=now;
+  });
+  rebuildFromLog();persist();
+  Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
+  refreshStats();renderReject();
+  showToast('📤 '+bid+' · 기부 '+st.pending+'개 제출 처리',0);
+}
+// 배치 되돌리기 (잘못 눌렀을 때 — 해당 배치만 미제출로 복원)
+function donaCancel(bid){
+  if(!bid)return;
+  let n=0;
+  donaEach((s,it,tag)=>{
+    if(((it.rejsB||{})[tag])!==bid)return;
+    n+=Number((it.rejsDone||{})[tag]||0);
+    delete it.rejsDone[tag];delete it.rejsB[tag];
+  });
+  if(!n){showToast('해당 배치를 찾지 못했습니다',1);return;}
+  rebuildFromLog();persist();
+  Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
+  refreshStats();renderReject();
+  showToast('↩ '+bid+' 제출 취소 · '+n+'개 미제출로 복원',0);
+}
+window.donaCancel=donaCancel;
+function donaCardHTML(){
+  const st=donaStat(), bs=donaBatches();
+  const last=bs.length?bs[bs.length-1]:null;
+  const bstyle='padding:4px 10px;font-size:12px;background:var(--card2,#2a2f3a);color:var(--txt);border:1px solid var(--line);border-radius:6px;cursor:pointer';
+  return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="font-size:13px;color:var(--dim)">🎁 기부 제출 현황</div>
+      <div style="display:flex;gap:6px">
+        <button id="donaBtn" style="${bstyle}">📤 미제출 제출 처리</button>
+        ${last?`<button onclick="donaCancel('${last.id}')" title="최근 배치 되돌리기" style="${bstyle}">↩</button>`:''}
+      </div>
+    </div>
+    <div style="font-size:17px;font-weight:700;margin:6px 0 3px">총 ${st.total} · 제출 ${st.done} · <span style="color:${st.pending?'#e8912d':'var(--dim)'}">미제출 ${st.pending}</span></div>
+    <div style="font-size:12px;color:var(--dim)">${last?('배치 '+bs.length+'건 · 최근 '+esc(last.id)+' ('+last.qty+'개)'):'제출 이력 없음'}</div>
+  </div>`;
+}
+function bindDonaBtn(){
+  const b=document.getElementById('donaBtn');
+  if(b)b.addEventListener('click',donaSubmit);
+}
 function renderReject(){
   const rows=Object.values(filteredAgg().rejected);
   const totQ=rows.reduce((s,r)=>s+r.qty,0);
   const dtxt=dayFilter?(' · '+dayFilter):'';
   document.getElementById('rejSecCnt').textContent=rows.length+' 품목 / '+totQ+'개'+dtxt;
   const body=document.getElementById('rejBody');
-  if(!rows.length){body.innerHTML='<div class="empty">'+(dayFilter?dayFilter+'에 불가 처리된 품목이 없습니다.':'불가 처리된 품목이 없습니다.')+'</div>';return}
+  if(!rows.length){body.innerHTML=donaCardHTML()+'<div class="empty">'+(dayFilter?dayFilter+'에 불가 처리된 품목이 없습니다.':'불가 처리된 품목이 없습니다.')+'</div>';bindDonaBtn();return}
   rows.sort((a,b)=>b.last-a.last);
-  body.innerHTML=`<table class="invtbl"><thead><tr>
-    <th>품목</th><th>옵션</th><th>브랜드</th><th>창고</th><th>처분</th><th>사유</th><th style="text-align:center">수량</th><th style="text-align:center">수정</th></tr></thead><tbody>`+
+  body.innerHTML=donaCardHTML()+`<table class="invtbl"><thead><tr>
+    <th>품목</th><th>옵션</th><th>브랜드</th><th>창고</th><th>처분</th><th>사유</th><th style="text-align:center">수량</th><th style="text-align:center">제출</th><th style="text-align:center">수정</th></tr></thead><tbody>`+
     rows.map(r=>{const d=splitDisp(r.reason);return `<tr><td>${esc(r.i)}</td><td>${esc(r.o&&r.o!=='nan'?r.o:'')}</td>
       <td>${esc(r.b)}</td><td class="whc">${esc(r.w)}</td><td class="rj">${d.disp==='기부'?'🎁 기부':'🗑 폐기'}</td><td class="rj">${esc(d.reason)}</td><td class="qn">${r.qty}</td>
+      <td style="text-align:center" title="${esc(r.batch||'')}">${d.disp!=='기부'?'':((r.done||0)>=r.qty?'✅':((r.done||0)>0?(r.done+'/'+r.qty):'<span style="color:#e8912d">미제출</span>'))}</td>
       <td style="text-align:center;white-space:nowrap"><button class="rjedit" data-i="${esc(r.i)}" data-o="${esc(r.o)}" data-w="${esc(r.w)}" data-t="${esc(r.reason)}" data-q="${r.qty}" title="수량 수정" style="padding:3px 8px;font-size:12px;background:var(--card2,#2a2f3a);color:var(--txt);border:1px solid var(--line);border-radius:6px;cursor:pointer">✏</button> <button class="rjtag" data-i="${esc(r.i)}" data-o="${esc(r.o)}" data-w="${esc(r.w)}" data-t="${esc(r.reason)}" title="처분구분·사유 변경" style="padding:3px 8px;font-size:12px;background:var(--card2,#2a2f3a);color:var(--txt);border:1px solid var(--line);border-radius:6px;cursor:pointer">🔀</button></td></tr>`}).join('')+
     `</tbody></table>`;
   // 불가 수량 수정 (0 입력 = 해당 건 전체 취소)
@@ -762,6 +894,7 @@ function renderReject(){
       changeRejectTag(btn.dataset.i, btn.dataset.o, btn.dataset.w, btn.dataset.t, disp+'|'+reason);
     });
   });
+  bindDonaBtn();
 }
 // 불가(기부/폐기) 수량을 목표값으로 조정 — scanLog의 rejs가 단일 진실원천.
 // 줄인 만큼은 실제 송장이면 잔여(rem)로 되돌려 재처리할 수 있게 하고,
@@ -1038,8 +1171,17 @@ function rebuildFromLog(){
       Object.entries(rejs).forEach(([reason,q])=>{
         if(q>0){
           const k=it.i+'|'+it.o+'|'+it.w+'|'+reason;
-          if(!rejected[k])rejected[k]={i:it.i,o:it.o,b:it.b,w:it.w,a:it.a||'',p:it.p||'',reason,qty:0,last:s.dt||s.t||0};
-          rejected[k].qty+=q;touched=true;
+          if(!rejected[k])rejected[k]={i:it.i,o:it.o,b:it.b,w:it.w,a:it.a||'',p:it.p||'',reason,qty:0,done:0,batch:'',last:s.dt||s.t||0};
+          rejected[k].qty+=q;
+          // done = 기부확인서로 제출 완료된 수량 (rejsDone), batch = 제출 배치 ID
+          const dn=Math.min(Number((it.rejsDone||{})[reason]||0), q);
+          if(dn>0){
+            rejected[k].done+=dn;
+            const bid=(it.rejsB||{})[reason]||'';
+            if(bid&&!String(rejected[k].batch||'').includes(bid))
+              rejected[k].batch=rejected[k].batch?rejected[k].batch+','+bid:bid;
+          }
+          touched=true;
         }
       });
     });
@@ -1769,8 +1911,10 @@ document.getElementById('exportBtn').addEventListener('click',()=>{
   // 3) 양품화 불가 (사유 포함) — 입고와 분리된 별도 시트
   if(rejRows.length){
     rejRows.sort((a,b)=>(a.reason).localeCompare(b.reason)||(a.i).localeCompare(b.i));
-    const a5=[['처분구분','창고','상품코드','품목명','옵션','브랜드','사유','수량']];
-    rejRows.forEach(r=>{const d=splitDisp(r.reason);a5.push([d.disp,r.w,r.p||'',r.i,(r.o&&r.o!=='nan')?r.o:'',r.b,d.reason,r.qty]);});
+    const a5=[['처분구분','창고','상품코드','품목명','옵션','브랜드','사유','수량','제출','미제출','제출배치']];
+    rejRows.forEach(r=>{const d=splitDisp(r.reason);
+      const isG=d.disp==='기부', dn=isG?Number(r.done||0):'', pd=isG?Math.max(Number(r.qty||0)-Number(r.done||0),0):'';
+      a5.push([d.disp,r.w,r.p||'',r.i,(r.o&&r.o!=='nan')?r.o:'',r.b,d.reason,r.qty,dn,pd,isG?(r.batch||''):'']);});
     // 처분구분별 소계
     const byDisp={};rejRows.forEach(r=>{const d=splitDisp(r.reason);byDisp[d.disp]=(byDisp[d.disp]||0)+r.qty;});
     a5.push([]);a5.push(['── 처분구분별 소계 ──','','','','','','','']);
@@ -1780,7 +1924,7 @@ document.getElementById('exportBtn').addEventListener('click',()=>{
     a5.push([]);a5.push(['── 처분·사유별 소계 ──','','','','','','','']);
     Object.entries(bySum).sort((a,b)=>b[1]-a[1]).forEach(([rs,q])=>a5.push(['','','','','','',rs,q]));
     const ws5=XLSX.utils.aoa_to_sheet(a5);
-    ws5['!cols']=[{wch:9},{wch:10},{wch:14},{wch:40},{wch:22},{wch:10},{wch:14},{wch:6}];
+    ws5['!cols']=[{wch:9},{wch:10},{wch:14},{wch:40},{wch:22},{wch:10},{wch:14},{wch:6},{wch:7},{wch:8},{wch:16}];
     XLSX.utils.book_append_sheet(wb,ws5,'양품화불가');
     const rejTot=rejRows.reduce((s,r)=>s+r.qty,0);
     saved.push('불가 '+rejTot);
@@ -1789,7 +1933,7 @@ document.getElementById('exportBtn').addEventListener('click',()=>{
   // 4) 전체 스캔 로그 (입고+불가+조회만 전부 한 시트에 — 사유 열 포함)
   const logKeys=Object.keys(scanLog);
   if(logKeys.length){
-    const a4=[['원송장','조회시각','처리상태','처리시각','처분구분','사유','품목명','옵션','브랜드','창고','상품코드','수량','판매가','판매금액','옵션로케이션']];
+    const a4=[['원송장','조회시각','처리상태','처리시각','처분구분','사유','품목명','옵션','브랜드','창고','상품코드','수량','판매가','판매금액','옵션로케이션','처리기기']];
     // 행 분해 원칙: 송장 단위 플래그(done/rej)가 아니라 품목의 inQ/rejs를 기준으로 행을 만든다.
     // 부분입고 후 나머지를 불가처리하면 done/rej가 동시에 켜지므로 송장 단위로는 표현이 불가능하다.
     // 이 때문에 과거 export는 수기 불가건(done=true,rej=true)을 '입고'로 찍어 재입고에 이중집계됐다.
@@ -1801,7 +1945,7 @@ document.getElementById('exportBtn').addEventListener('click',()=>{
         const push=(status,disp,reason,qty)=>{
           const n=Number(qty||0);
           a4.push([s.num, tScan, status, (status==='조회만'?'':tDone), disp, reason,
-            it.i, opt, it.b, it.w, it.p||'', n, pr, (pr!==''?pr*n:''), locOf(it.p)]);
+            it.i, opt, it.b, it.w, it.p||'', n, pr, (pr!==''?pr*n:''), locOf(it.p), s.dev||'']);
         };
         const inQ=Number(it.inQ||0);
         let rejN=0;
@@ -1815,7 +1959,7 @@ document.getElementById('exportBtn').addEventListener('click',()=>{
       });
     });
     const ws4=XLSX.utils.aoa_to_sheet(a4);
-    ws4['!cols']=[{wch:15},{wch:16},{wch:9},{wch:16},{wch:9},{wch:14},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:6},{wch:10},{wch:12},{wch:14}];
+    ws4['!cols']=[{wch:15},{wch:16},{wch:9},{wch:16},{wch:9},{wch:14},{wch:40},{wch:22},{wch:10},{wch:10},{wch:14},{wch:6},{wch:10},{wch:12},{wch:14},{wch:11}];
     XLSX.utils.book_append_sheet(wb,ws4,'전체스캔로그');
     const doneN=logKeys.filter(k=>scanLog[k].done).length;
     const rejN=logKeys.filter(k=>scanLog[k].rej).length;
@@ -1832,6 +1976,95 @@ document.getElementById('exportBtn').addEventListener('click',()=>{
     XLSX.utils.book_append_sheet(wb,ws3,'기타_확인용');
     if(gE.length)saved.push('기타 '+gE.length);
     if(noCode.length)saved.push('코드없음 '+noCode.length);
+  }
+
+  // 6) 일자별 요약 — 처리량 · 투입 대수 · 마감 파레트 (진척 보고용)
+  {
+    const day={};
+    const dayOf=s=>{const t=s.dt||s.t||0;return t?fmt(t).slice(0,10):'';};
+    const bucket=d=>day[d]||(day[d]={in:0,gibu:0,pyegi:0,devs:new Set(),pal:0});
+    Object.values(scanLog).forEach(s=>{
+      const d=dayOf(s);if(!d)return;
+      const o=bucket(d);
+      if(s.dev)o.devs.add(s.dev);
+      (s.items||[]).forEach(it=>{
+        o.in+=Number(it.inQ||0);
+        Object.entries(it.rejs||{}).forEach(([tag,q])=>{
+          const n=Number(q||0);if(n<=0)return;
+          if(splitDisp(tag).disp==='기부')o.gibu+=n;else o.pyegi+=n;
+        });
+      });
+    });
+    Object.values(palletLog).forEach(p=>{if(p.closed)bucket(fmt(p.closed).slice(0,10)).pal++;});
+    const days=Object.keys(day).sort();
+    if(days.length){
+      const a6=[['일자','입고','기부','폐기','총처리','투입 대수','처리기기','마감 파레트']];
+      let t1=0,t2=0,t3=0,t4=0;
+      days.forEach(d=>{
+        const o=day[d];t1+=o.in;t2+=o.gibu;t3+=o.pyegi;t4+=o.pal;
+        a6.push([d,o.in,o.gibu,o.pyegi,o.in+o.gibu+o.pyegi,o.devs.size,[...o.devs].sort().join(', '),o.pal]);
+      });
+      a6.push([]);
+      a6.push(['── 합계 ──',t1,t2,t3,t1+t2+t3,'','',t4]);
+      a6.push([]);
+      a6.push(['작업일수',days.length]);
+      a6.push(['일평균 처리',Math.round((t1+t2+t3)/days.length)]);
+      const ws6=XLSX.utils.aoa_to_sheet(a6);
+      ws6['!cols']=[{wch:12},{wch:8},{wch:8},{wch:8},{wch:9},{wch:10},{wch:34},{wch:12}];
+      XLSX.utils.book_append_sheet(wb,ws6,'일자별요약');
+      saved.push('일자별 '+days.length+'일');
+    }
+  }
+
+  // 7) 파레트 현황 — 전체 대비 마감 진척 + 파레트별 내역
+  {
+    const ps=Object.values(palletLog).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+    if(ps.length){
+      const closedN=ps.filter(p=>p.closed).length;
+      const goal=Number(localStorage.getItem(TOTPAL_KEY)||0);
+      const a7=[['── 파레트 진척 ──',''],
+        ['전체 파레트(현장 입력)',goal||'미입력'],
+        ['마감 완료',closedN],
+        ['진행 중',ps.length-closedN],
+        ['진척률',goal?(Math.round(closedN/goal*1000)/10+'%'):'전체 파레트 수 미입력'],
+        [],
+        ['파레트ID','날짜','창고','적재 건수','수량','상태','마감시각','기기']];
+      ps.forEach(p=>a7.push([p.id,p.date,p.wh,(p.items||[]).length,palletQty(p.id),
+        p.closed?'마감':'진행 중',p.closed?fmt(p.closed):'',p.dev||'']));
+      const ws7=XLSX.utils.aoa_to_sheet(a7);
+      ws7['!cols']=[{wch:22},{wch:12},{wch:9},{wch:10},{wch:8},{wch:9},{wch:16},{wch:11}];
+      XLSX.utils.book_append_sheet(wb,ws7,'파레트현황');
+      saved.push('파레트 '+closedN+'/'+ps.length);
+    }
+  }
+
+  // 8) 기부 제출 이력 — 배치별 제출 내역 + 다음 확인서 대상(미제출) 목록
+  {
+    const st=donaStat(), bs=donaBatches();
+    if(st.total>0){
+      const a8=[['── 기부 제출 현황 ──',''],
+        ['기부 처리 총량',st.total],
+        ['제출 완료',st.done],
+        ['미제출 (다음 확인서 대상)',st.pending],
+        [],
+        ['배치번호','제출시각','수량']];
+      bs.forEach(b=>a8.push([b.id,b.at?fmt(b.at):'',b.qty]));
+      a8.push([]);
+      a8.push(['── 미제출 기부 품목 ──']);
+      a8.push(['창고','상품코드','품목명','옵션','사유','수량']);
+      let pn=0;
+      Object.values(rejected).forEach(r=>{
+        const d=splitDisp(r.reason);if(d.disp!=='기부')return;
+        const pend=Math.max(Number(r.qty||0)-Number(r.done||0),0);
+        if(pend<=0)return;
+        a8.push([r.w,r.p||'',r.i,(r.o&&r.o!=='nan')?r.o:'',d.reason,pend]);pn++;
+      });
+      if(!pn)a8.push(['(없음 — 전량 제출 완료)']);
+      const ws8=XLSX.utils.aoa_to_sheet(a8);
+      ws8['!cols']=[{wch:22},{wch:16},{wch:40},{wch:22},{wch:14},{wch:8}];
+      XLSX.utils.book_append_sheet(wb,ws8,'기부제출이력');
+      saved.push('기부제출 '+st.done+'/'+st.total);
+    }
   }
 
   if(!wb.SheetNames.length){showToast('내보낼 데이터가 없습니다',1);return}
