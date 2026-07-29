@@ -729,10 +729,109 @@ function renderReject(){
   if(!rows.length){body.innerHTML='<div class="empty">'+(dayFilter?dayFilter+'에 불가 처리된 품목이 없습니다.':'불가 처리된 품목이 없습니다.')+'</div>';return}
   rows.sort((a,b)=>b.last-a.last);
   body.innerHTML=`<table class="invtbl"><thead><tr>
-    <th>품목</th><th>옵션</th><th>브랜드</th><th>창고</th><th>처분</th><th>사유</th><th style="text-align:center">수량</th></tr></thead><tbody>`+
+    <th>품목</th><th>옵션</th><th>브랜드</th><th>창고</th><th>처분</th><th>사유</th><th style="text-align:center">수량</th><th style="text-align:center">수정</th></tr></thead><tbody>`+
     rows.map(r=>{const d=splitDisp(r.reason);return `<tr><td>${esc(r.i)}</td><td>${esc(r.o&&r.o!=='nan'?r.o:'')}</td>
-      <td>${esc(r.b)}</td><td class="whc">${esc(r.w)}</td><td class="rj">${d.disp==='기부'?'🎁 기부':'🗑 폐기'}</td><td class="rj">${esc(d.reason)}</td><td class="qn">${r.qty}</td></tr>`}).join('')+
+      <td>${esc(r.b)}</td><td class="whc">${esc(r.w)}</td><td class="rj">${d.disp==='기부'?'🎁 기부':'🗑 폐기'}</td><td class="rj">${esc(d.reason)}</td><td class="qn">${r.qty}</td>
+      <td style="text-align:center;white-space:nowrap"><button class="rjedit" data-i="${esc(r.i)}" data-o="${esc(r.o)}" data-w="${esc(r.w)}" data-t="${esc(r.reason)}" data-q="${r.qty}" title="수량 수정" style="padding:3px 8px;font-size:12px;background:var(--card2,#2a2f3a);color:var(--txt);border:1px solid var(--line);border-radius:6px;cursor:pointer">✏</button> <button class="rjtag" data-i="${esc(r.i)}" data-o="${esc(r.o)}" data-w="${esc(r.w)}" data-t="${esc(r.reason)}" title="처분구분·사유 변경" style="padding:3px 8px;font-size:12px;background:var(--card2,#2a2f3a);color:var(--txt);border:1px solid var(--line);border-radius:6px;cursor:pointer">🔀</button></td></tr>`}).join('')+
     `</tbody></table>`;
+  // 불가 수량 수정 (0 입력 = 해당 건 전체 취소)
+  body.querySelectorAll('.rjedit').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const cur=parseInt(btn.dataset.q)||0;
+      const d=splitDisp(btn.dataset.t);
+      const opt=(btn.dataset.o&&btn.dataset.o!=='nan')?btn.dataset.o+'\n':'';
+      const ans=prompt(`${d.disp} 수량 수정\n\n${btn.dataset.i}\n${opt}사유: ${d.reason}\n현재 ${cur}개 → 새 수량 입력  (0 = 취소)`, String(cur));
+      if(ans===null)return;
+      const nv=parseInt(ans);
+      if(isNaN(nv)||nv<0){showToast('0 이상의 숫자를 입력하세요',1);return;}
+      if(nv===cur)return;
+      adjustRejectQty(btn.dataset.i, btn.dataset.o, btn.dataset.w, btn.dataset.t, nv);
+    });
+  });
+  // 처분구분·사유 변경 (기부 ↔ 폐기)
+  body.querySelectorAll('.rjtag').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const d=splitDisp(btn.dataset.t);
+      const nd=prompt(`처분구분 변경\n\n${btn.dataset.i}\n현재: ${d.disp} / ${d.reason}\n\n새 처분구분을 입력하세요 (기부 또는 폐기)`, d.disp);
+      if(nd===null)return;
+      const disp=String(nd).trim();
+      if(disp!=='기부'&&disp!=='폐기'){showToast('기부 또는 폐기만 입력할 수 있습니다',1);return;}
+      const nr=prompt(`사유 입력\n\n현재: ${d.reason}`, d.reason);
+      if(nr===null)return;
+      const reason=String(nr).trim()||'기타';
+      changeRejectTag(btn.dataset.i, btn.dataset.o, btn.dataset.w, btn.dataset.t, disp+'|'+reason);
+    });
+  });
+}
+// 불가(기부/폐기) 수량을 목표값으로 조정 — scanLog의 rejs가 단일 진실원천.
+// 줄인 만큼은 실제 송장이면 잔여(rem)로 되돌려 재처리할 수 있게 하고,
+// 수기 등록건(M-)은 되돌릴 원송장이 없으므로 잔여를 복원하지 않는다.
+function adjustRejectQty(i,o,w,tag,newQty){
+  const k=i+'|'+o+'|'+w+'|'+tag;
+  const cur=rejected[k]?rejected[k].qty:0;
+  const delta=newQty-cur;
+  if(delta===0)return;
+  const match=it=>(it.i+'|'+it.o+'|'+it.w)===(i+'|'+o+'|'+w);
+  if(delta<0){
+    let need=-delta;
+    Object.values(scanLog).forEach(s=>{
+      const manual=(s.mis===true)||String(s.num||'').startsWith('M-');
+      (s.items||[]).forEach(it=>{
+        if(need<=0)return;
+        const have=(it.rejs&&it.rejs[tag])||0;
+        if(match(it)&&have>0){
+          const take=Math.min(have,need);
+          it.rejs[tag]=have-take;
+          if(it.rejs[tag]<=0)delete it.rejs[tag];
+          if(!manual&&it.rem!=null)it.rem+=take;
+          need-=take;
+        }
+      });
+      // 남은 불가 항목이 없으면 송장의 불가 플래그 해제
+      if((s.items||[]).every(it=>!it.rejs||!Object.keys(it.rejs).length))s.rej=false;
+    });
+  }else{
+    let target=null,prefer=null;
+    Object.values(scanLog).forEach(s=>{
+      (s.items||[]).forEach(it=>{
+        if(match(it)&&it.rejs&&it.rejs[tag]!=null){target=it;if(!prefer&&(it.rem||0)>0)prefer=it;}
+      });
+    });
+    target=prefer||target;   // 잔여가 남은 항목이 있으면 거기서 먼저 차감
+    if(!target){showToast('원본 기록을 찾지 못해 늘릴 수 없습니다',1);return;}
+    target.rejs[tag]=(target.rejs[tag]||0)+delta;
+    if(target.rem!=null)target.rem=Math.max(0,target.rem-delta);
+  }
+  rebuildFromLog();
+  persist();
+  Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
+  refreshStats();renderInbound();renderReject();
+  const d=splitDisp(tag);
+  showToast(`✏ ${d.disp} 수량 수정: ${cur} → ${newQty}`,0);
+}
+// 불가 건의 처분구분·사유 변경 (기부 ↔ 폐기, 사유 문구 정정)
+function changeRejectTag(i,o,w,oldTag,newTag){
+  if(!newTag||newTag===oldTag)return;
+  const match=it=>(it.i+'|'+it.o+'|'+it.w)===(i+'|'+o+'|'+w);
+  let moved=0;
+  Object.values(scanLog).forEach(s=>{
+    (s.items||[]).forEach(it=>{
+      const have=(it.rejs&&it.rejs[oldTag])||0;
+      if(match(it)&&have>0){
+        it.rejs[newTag]=(it.rejs[newTag]||0)+have;
+        delete it.rejs[oldTag];
+        moved+=have;
+      }
+    });
+    if(s.reason===oldTag)s.reason=newTag;
+  });
+  if(!moved){showToast('변경할 기록을 찾지 못했습니다',1);return;}
+  rebuildFromLog();
+  persist();
+  Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
+  refreshStats();renderReject();
+  const a=splitDisp(oldTag),b=splitDisp(newTag);
+  showToast(`🔀 ${a.disp}(${a.reason}) → ${b.disp}(${b.reason}) ${moved}개`,0);
 }
 renderInbound();
 renderReject();
