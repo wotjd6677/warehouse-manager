@@ -795,15 +795,36 @@ function donaNextId(){
   });
   return 'D-'+ymd+'-'+(mx+1);
 }
-// 미제출 기부 전량을 하나의 배치로 묶어 제출 처리
+// 미제출 기부를 하나의 배치로 묶어 제출 처리
+// 기준일을 넣으면 그 날짜까지 처리된 건만 제출 → 이미 발행한 확인서와 범위를 맞출 때 사용
+function donaDay(s){
+  const t=s.dt||s.t||0;if(!t)return '';
+  const d=new Date(t);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function donaSubmit(){
   const st=donaStat();
   if(st.pending<=0){showToast('미제출 기부가 없습니다',1);return;}
+  const ans=prompt('기부 제출 처리\n\n확인서에 포함된 기준일을 입력하세요 (YYYY-MM-DD).\n그 날짜까지 처리된 미제출 기부만 제출됩니다.\n\n비워두면 전량 '+st.pending+'개를 제출합니다.','');
+  if(ans===null)return;
+  const until=String(ans).trim();
+  if(until&&!/^\d{4}-\d{2}-\d{2}$/.test(until)){showToast('YYYY-MM-DD 형식으로 입력하세요',1);return;}
+  let cnt=0, skip=0;
+  donaEach((s,it,tag,n,d)=>{
+    if(d>=n)return;
+    if(until&&(donaDay(s)>until||!donaDay(s))){skip+=n-d;return;}
+    cnt+=n-d;
+  });
+  if(!cnt){showToast('해당 기준일까지 미제출 기부가 없습니다',1);return;}
   const bid=donaNextId();
-  if(!confirm('미제출 기부 '+st.pending+'개를 제출 처리합니다.\n배치번호: '+bid+'\n\n이후 발생하는 기부는 다음 확인서 대상이 됩니다.\n진행할까요?'))return;
+  const msg='배치번호: '+bid+'\n'+(until?('기준일: '+until+' 까지\n'):'전체 기간\n')
+    +'\n제출 처리: '+cnt+'개'+(skip?('\n기준일 이후로 남김: '+skip+'개'):'')
+    +'\n\n발행한 기부확인서의 총 수량과 일치하는지 확인하세요.\n진행할까요?';
+  if(!confirm(msg))return;
   const now=Date.now();
   donaEach((s,it,tag,n,d)=>{
     if(d>=n)return;
+    if(until&&(donaDay(s)>until||!donaDay(s)))return;
     if(!it.rejsDone)it.rejsDone={};
     if(!it.rejsB)it.rejsB={};
     it.rejsDone[tag]=n;
@@ -813,7 +834,7 @@ function donaSubmit(){
   rebuildFromLog();persist();
   Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
   refreshStats();renderReject();
-  showToast('📤 '+bid+' · 기부 '+st.pending+'개 제출 처리',0);
+  showToast('📤 '+bid+' · 기부 '+cnt+'개 제출 처리'+(skip?(' (미제출 '+skip+'개 남김)'):''),0);
 }
 // 배치 되돌리기 (잘못 눌렀을 때 — 해당 배치만 미제출로 복원)
 function donaCancel(bid){
