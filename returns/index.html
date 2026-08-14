@@ -8,7 +8,7 @@
   // ── Firebase 실시간 공유 (기존 warehouse-manager 프로젝트 재사용) ──
   // 반품 데이터는 returns/scanLog 경로에만 저장되어 대시보드 데이터와 분리됩니다.
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, set, remove, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, set, remove, onValue, get, onChildAdded, onChildChanged, onChildRemoved } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
   const firebaseConfig = {
     apiKey: "AIzaSyAYpkKy1UyFlYRK-dJBQ7z0D-4Zlp0u8TM",
     authDomain: "warehouse-manager-6174e.firebaseapp.com",
@@ -37,11 +37,26 @@
   window.fbClearAll = function(){
     try{ remove(ref(db, ROOT)); }catch(e){ console.warn('fbClear 실패', e); }
   };
-  // 실시간 수신: 서버 scanLog가 바뀌면 앱에 통째로 전달 → 앱이 병합/재계산
+  // 실시간 수신: 최초 1회만 전체를 받고, 이후에는 변경된 송장 1건씩만 받는다.
+  // (기존에는 onValue를 전체 노드에 걸어 송장 하나 바뀔 때마다 수천 건이 통째로 재전송됐다)
   window.fbSubscribe = function(handler){
-    onValue(ref(db, ROOT), snap=>{
-      handler(snap.exists() ? snap.val() : {});
-    }, err=>console.warn('fb 구독 오류', err));
+    const r = ref(db, ROOT);
+    const known = new Set();
+    onValue(r, snap=>{
+      const all = snap.exists() ? snap.val() : {};
+      Object.keys(all).forEach(k=>known.add(k));
+      handler(all, true);
+      // onChildAdded는 등록 시점에 기존 자식 전부를 다시 쏘므로, 이미 받은 키는 걸러낸다
+      onChildAdded(r, s2=>{
+        if(known.has(s2.key))return;
+        known.add(s2.key);
+        handler({[s2.key]: s2.val()}, false);
+      });
+      onChildChanged(r, s2=>{
+        known.add(s2.key);
+        handler({[s2.key]: s2.val()}, false);
+      });
+    }, err=>console.warn('fb 구독 오류', err), { onlyOnce:true });
   };
   // ── 파레트 동기화 ──
   window.fbPushPallet = function(pid, obj){
@@ -401,13 +416,31 @@ let palletLog={};
 let openPallet={};
 
 // 복원 (먼저 localStorage에서 — 오프라인이거나 Firebase 로딩 전에도 즉시 동작)
+let _needRebuild=false;
 try{const saved=JSON.parse(localStorage.getItem(LS_KEY)||'null');
   if(saved){inbound=saved.inbound||{};inLogCount=saved.logCount||0;inQtyTotal=saved.qtyTotal||0;scanLog=saved.scanLog||{};rejected=saved.rejected||{};
-    palletLog=saved.palletLog||{};openPallet=saved.openPallet||{};}}catch(e){}
+    palletLog=saved.palletLog||{};openPallet=saved.openPallet||{};
+    // 신형 저장본은 inbound/rejected를 담지 않는다 → scanLog에서 재계산 필요
+    if(!saved.inbound&&Object.keys(scanLog).length)_needRebuild=true;}}catch(e){}
 
+// 저장 실패(용량 초과)를 조용히 삼키면 새로고침 시 작업분이 통째로 사라진다.
+// inbound/rejected는 scanLog에서 100% 복원 가능하므로 저장 대상에서 제외해 용량을 줄인다.
+let _saveErr=false, _saveWarnAt=0;
 function persist(){
-  try{localStorage.setItem(LS_KEY,JSON.stringify({inbound,logCount:inLogCount,qtyTotal:inQtyTotal,scanLog,rejected,palletLog,openPallet}));}catch(e){}
+  try{
+    localStorage.setItem(LS_KEY,JSON.stringify({logCount:inLogCount,qtyTotal:inQtyTotal,scanLog,palletLog,openPallet}));
+    if(_saveErr){_saveErr=false;showToast('✅ 저장 정상화됨',0);}
+  }catch(e){
+    _saveErr=true;
+    const now=Date.now();
+    if(now-_saveWarnAt>20000){        // 20초에 한 번만 경고 (토스트 폭주 방지)
+      _saveWarnAt=now;
+      showToast('⚠ 저장 실패! 브라우저 저장공간이 가득 찼습니다. 지금 엑셀로 내보낸 뒤 초기화하세요.',1);
+    }
+    console.error('persist 실패',e);
+  }
 }
+function saveHealthy(){return !_saveErr;}
 
 // ── 파레트 헬퍼 ──
 function pYmd(t){const d=new Date(t);return String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');}
@@ -444,21 +477,43 @@ function pClose(pid,t){
 // 서버 scanLog가 바뀌면(=다른 노트북이 처리하면) 받아서 병합 후 전체 재계산.
 // mergeScanLog는 '처리수량이 더 많은 쪽'을 채택하므로 내 작업과 충돌하지 않음.
 let _fbReady=false, _fbApplying=false;
+// 서버 변경을 모아 한 번에 반영한다.
+// 매 수신마다 전체 재계산 + 전 화면 재렌더를 하면 여러 대가 동시에 작업할 때 기기가 멈춘다.
+// 또한 수량을 입력하는 중에 화면을 다시 그리면 입력값이 날아가므로 그동안은 반영을 미룬다.
+let _applyTimer=null, _applyWaitFrom=0;
+function isTyping(){
+  const a=document.activeElement;
+  if(!a)return false;
+  if(a.tagName==='INPUT'&&a.id!=='inv')return true;
+  return !!(a.classList&&(a.classList.contains('qin')||a.classList.contains('chk')));
+}
+function scheduleApply(immediate){
+  clearTimeout(_applyTimer);
+  if(!_applyWaitFrom)_applyWaitFrom=Date.now();
+  _applyTimer=setTimeout(()=>{
+    // 입력 중이면 미루되, 15초를 넘기면 강제로 반영해 화면이 영영 갱신되지 않는 상황을 막는다
+    if(isTyping() && Date.now()-_applyWaitFrom<15000){ scheduleApply(); return; }
+    _applyWaitFrom=0;
+    _fbApplying=true;
+    try{
+      rebuildFromLog();
+      persistLocalOnly();
+      refreshStats();renderInbound();renderReject();
+    }catch(e){console.warn('fb 적용 오류',e);}
+    _fbApplying=false;
+  }, immediate?0:400);
+}
 function startFirebaseSync(){
   if(_fbReady||typeof window.fbSubscribe!=='function')return;
   _fbReady=true;
   // (1) 내 로컬에 이미 있는 송장들을 서버로 한 번 밀어올림 (최초 동기화)
   try{ Object.entries(scanLog).forEach(([num,s])=>{ if(typeof window.fbPushScan==='function') window.fbPushScan(num,s); }); }catch(e){}
   // (2) 서버 변경 실시간 수신
-  window.fbSubscribe(server=>{
+  window.fbSubscribe((server, isFull)=>{
     _fbApplying=true;
-    try{
-      mergeScanLog(server||{});   // 서버본을 내 scanLog에 병합
-      rebuildFromLog();           // scanLog 기준으로 inbound/rejected/카운터 전체 재계산
-      persistLocalOnly();         // 로컬에만 저장 (서버로 되돌려 보내 무한루프 방지)
-      refreshStats();renderInbound();renderReject();
-    }catch(e){console.warn('fb 적용 오류',e);}
+    try{ mergeScanLog(server||{}); }catch(e){console.warn('fb 병합 오류',e);}
     _fbApplying=false;
+    scheduleApply(isFull);        // 재계산·재렌더는 모아서 한 번에
   });
   // (3) 파레트 최초 업로드 + 실시간 수신
   try{ Object.entries(palletLog).forEach(([pid,p])=>{ if(typeof window.fbPushPallet==='function') window.fbPushPallet(pid,p); }); }catch(e){}
@@ -483,9 +538,7 @@ function mergePallets(incoming){
   });
 }
 // 서버로 push하지 않고 로컬 저장만
-function persistLocalOnly(){
-  try{localStorage.setItem(LS_KEY,JSON.stringify({inbound,logCount:inLogCount,qtyTotal:inQtyTotal,scanLog,rejected,palletLog,openPallet}));}catch(e){}
-}
+function persistLocalOnly(){ persist(); }
 // 특정 송장 1건을 서버로 올림 (확정/불가/오배송 직후 호출)
 function syncScan(num){
   if(_fbApplying)return;   // 서버에서 받아 적용 중이면 되쏘지 않음
@@ -501,6 +554,7 @@ function syncPalletAll(){
   if(_fbApplying)return;
   Object.keys(openPallet).forEach(wh=>{const pid=openPallet[wh];if(palletLog[pid])syncPallet(pid);});
 }
+if(_needRebuild){try{rebuildFromLog();}catch(e){console.warn('초기 재계산 실패',e);}}
 window.addEventListener('fbReady', startFirebaseSync);
 // 혹시 fbReady 이벤트를 놓쳤어도(스크립트 로드 순서) 안전하게 한 번 더 시도
 setTimeout(startFirebaseSync, 1500);
@@ -656,14 +710,45 @@ function badReason(r){return /불량|파손|하자|오배송|누락|오염|손�
 function extractInv(raw){const m=raw.match(/원운송장[:\s]*([0-9]{10,14})/);if(m)return m[1];return raw.replace(/[^0-9]/g,'')}
 function key(it){return it.i+'|'+it.o+'|'+it.w}
 
+// ===== 목록 검색 =====
+// 품목명·옵션·상품코드·브랜드·창고를 한 번에 훑는다 (공백으로 여러 단어 AND 검색).
+let invSearch='', rejSearch='';
+function srchBox(id,val,ph){
+  return `<div style="margin-bottom:8px"><input id="${id}" type="search" placeholder="${ph}" value="${esc(val)}"
+    style="width:100%;padding:8px 11px;font-size:14px;background:var(--card2,#2a2f3a);color:var(--txt);
+    border:1px solid var(--line);border-radius:8px;outline:none"></div>`;
+}
+function srchHit(r,q){
+  if(!q)return true;
+  const hay=((r.i||'')+' '+(r.o||'')+' '+(r.p||'')+' '+(r.b||'')+' '+(r.w||'')+' '+(r.reason||'')).toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every(w=>hay.includes(w));
+}
+function bindSrch(id,cur,set,rerender){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.value=cur;
+  if(document.activeElement!==el&&window._srchFocus===id){
+    el.focus();
+    try{el.setSelectionRange(el.value.length,el.value.length);}catch(e){}
+  }
+  el.addEventListener('input',()=>{window._srchFocus=id;set(el.value);rerender();});
+  el.addEventListener('blur',()=>{if(window._srchFocus===id)window._srchFocus='';});
+}
 function renderInbound(){
-  const rows=Object.values(filteredAgg().inbound);
+  const all=Object.values(filteredAgg().inbound);
+  const rows=all.filter(r=>srchHit(r,invSearch));
   const dtxt=dayFilter?(' · '+dayFilter):'';
-  document.getElementById('invSecCnt').textContent=rows.length+' 품목'+dtxt;
+  const stxt=invSearch?(' · 검색 '+rows.length+'/'+all.length):'';
+  document.getElementById('invSecCnt').textContent=all.length+' 품목'+dtxt+stxt;
   const body=document.getElementById('invBody');
-  if(!rows.length){body.innerHTML='<div class="empty">'+(dayFilter?dayFilter+'에 입고된 품목이 없습니다.':'아직 입고된 품목이 없습니다.')+'</div>';return}
+  const SB=all.length?srchBox('invSrch',invSearch,'🔍 품목명 · 상품코드 · 브랜드 · 창고 검색'):'';
+  const reIn=()=>renderInbound();
+  if(!rows.length){
+    body.innerHTML=SB+'<div class="empty">'+(invSearch?'검색 결과가 없습니다.':(dayFilter?dayFilter+'에 입고된 품목이 없습니다.':'아직 입고된 품목이 없습니다.'))+'</div>';
+    bindSrch('invSrch',invSearch,v=>invSearch=v,reIn);return;
+  }
   rows.sort((a,b)=>b.last-a.last);
-  body.innerHTML=`<table class="invtbl"><thead><tr>
+  body.innerHTML=SB+`<table class="invtbl"><thead><tr>
     <th>품목</th><th>옵션</th><th>브랜드</th><th>창고</th><th style="text-align:center">입고수량</th><th style="text-align:center">라벨</th><th style="text-align:center">수정</th></tr></thead><tbody>`+
     rows.map(r=>`<tr><td>${esc(r.i)}</td><td>${esc(r.o&&r.o!=='nan'?r.o:'')}</td>
       <td>${esc(r.b)}</td><td class="whc">${esc(r.w)}</td><td class="qn">${r.qty}</td>
@@ -696,6 +781,7 @@ function renderInbound(){
       adjustInboundQty(btn.dataset.i, btn.dataset.o, btn.dataset.w, nv);
     });
   });
+  bindSrch('invSrch',invSearch,v=>invSearch=v,()=>renderInbound());
 }
 // 입고수량을 목표값(newQty)으로 조정 — scanLog(원본) + 파레트 내역을 함께 반영
 function adjustInboundQty(i,o,w,newQty){
@@ -873,14 +959,21 @@ function bindDonaBtn(){
   if(b)b.addEventListener('click',donaSubmit);
 }
 function renderReject(){
-  const rows=Object.values(filteredAgg().rejected);
-  const totQ=rows.reduce((s,r)=>s+r.qty,0);
+  const all=Object.values(filteredAgg().rejected);
+  const rows=all.filter(r=>srchHit(r,rejSearch));
+  const totQ=all.reduce((s,r)=>s+r.qty,0);
   const dtxt=dayFilter?(' · '+dayFilter):'';
-  document.getElementById('rejSecCnt').textContent=rows.length+' 품목 / '+totQ+'개'+dtxt;
+  const stxt=rejSearch?(' · 검색 '+rows.length+'/'+all.length):'';
+  document.getElementById('rejSecCnt').textContent=all.length+' 품목 / '+totQ+'개'+dtxt+stxt;
   const body=document.getElementById('rejBody');
-  if(!rows.length){body.innerHTML=donaCardHTML()+'<div class="empty">'+(dayFilter?dayFilter+'에 불가 처리된 품목이 없습니다.':'불가 처리된 품목이 없습니다.')+'</div>';bindDonaBtn();return}
+  const SB=all.length?srchBox('rejSrch',rejSearch,'🔍 품목명 · 상품코드 · 사유 · 창고 검색'):'';
+  const reRj=()=>renderReject();
+  if(!rows.length){
+    body.innerHTML=donaCardHTML()+SB+'<div class="empty">'+(rejSearch?'검색 결과가 없습니다.':(dayFilter?dayFilter+'에 불가 처리된 품목이 없습니다.':'불가 처리된 품목이 없습니다.'))+'</div>';
+    bindDonaBtn();bindSrch('rejSrch',rejSearch,v=>rejSearch=v,reRj);return;
+  }
   rows.sort((a,b)=>b.last-a.last);
-  body.innerHTML=donaCardHTML()+`<table class="invtbl"><thead><tr>
+  body.innerHTML=donaCardHTML()+SB+`<table class="invtbl"><thead><tr>
     <th>품목</th><th>옵션</th><th>브랜드</th><th>창고</th><th>처분</th><th>사유</th><th style="text-align:center">수량</th><th style="text-align:center">제출</th><th style="text-align:center">수정</th></tr></thead><tbody>`+
     rows.map(r=>{const d=splitDisp(r.reason);return `<tr><td>${esc(r.i)}</td><td>${esc(r.o&&r.o!=='nan'?r.o:'')}</td>
       <td>${esc(r.b)}</td><td class="whc">${esc(r.w)}</td><td class="rj">${d.disp==='기부'?'🎁 기부':'🗑 폐기'}</td><td class="rj">${esc(d.reason)}</td><td class="qn">${r.qty}</td>
@@ -916,6 +1009,7 @@ function renderReject(){
     });
   });
   bindDonaBtn();
+  bindSrch('rejSrch',rejSearch,v=>rejSearch=v,()=>renderReject());
 }
 // 불가(기부/폐기) 수량을 목표값으로 조정 — scanLog의 rejs가 단일 진실원천.
 // 줄인 만큼은 실제 송장이면 잔여(rem)로 되돌려 재처리할 수 있게 하고,
@@ -1499,6 +1593,7 @@ function printPalletSheet(pid){
     <td class="op">${esc(r.o&&r.o!=='nan'?r.o:'')}</td>
     <td class="qt">${r.qty}</td></tr>`).join('');
   const win=window.open('','_psheet','width=900,height=1100');
+  if(!win){showToast('팝업이 차단되어 인쇄창을 열 수 없습니다. 주소창의 팝업 차단을 해제한 뒤 다시 시도하세요.',1);return;}
   win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
 <title>파레트 내역 ${esc(pid)}</title>
 <style>
@@ -1579,6 +1674,7 @@ function printLabelsA4(labels, caption){
     `<div class="lbl"><div class="whtag">${esc(l.wh||'')}</div><div class="nm">${esc(l.name)}</div></div>`
   ).join('');
   const win=window.open('','_label','width=900,height=1000');
+  if(!win){showToast('팝업이 차단되어 인쇄창을 열 수 없습니다. 주소창의 팝업 차단을 해제한 뒤 다시 시도하세요.',1);return;}
   win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
 <title>반품 양품화 라벨</title>
 <style>
@@ -1622,6 +1718,7 @@ function printLabelsRoll(labels, caption){
     `<div class="rlbl"><div class="rwh">${esc(l.wh||'')}</div><div class="rnm">${esc(l.name)}</div></div>`
   ).join('');
   const win=window.open('','_labelroll','width=520,height=760');
+  if(!win){showToast('팝업이 차단되어 인쇄창을 열 수 없습니다. 주소창의 팝업 차단을 해제한 뒤 다시 시도하세요.',1);return;}
   win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
 <title>반품 양품화 롤라벨</title>
 <style>
