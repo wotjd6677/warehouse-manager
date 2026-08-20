@@ -8,7 +8,7 @@
   // ── Firebase 실시간 공유 (기존 warehouse-manager 프로젝트 재사용) ──
   // 반품 데이터는 returns/scanLog 경로에만 저장되어 대시보드 데이터와 분리됩니다.
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, set, remove, onValue, get, onChildAdded, onChildChanged, onChildRemoved } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, set, remove, onValue, get, update, onChildAdded, onChildChanged, onChildRemoved } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
   const firebaseConfig = {
     apiKey: "AIzaSyAYpkKy1UyFlYRK-dJBQ7z0D-4Zlp0u8TM",
     authDomain: "warehouse-manager-6174e.firebaseapp.com",
@@ -28,6 +28,14 @@
   // 송장 1건 올리기 (확정/불가/오배송 직후 호출)
   window.fbPushScan = function(num, obj){
     try{ set(ref(db, ROOT+'/'+fbKey(num)), obj); }catch(e){ console.warn('fbPush 실패', e); }
+  };
+  // 여러 송장 일괄 업로드 — 다건 수정(기부 제출 등)을 한 번의 요청으로 처리
+  window.fbPushMany = function(entries){
+    try{
+      const fan={};
+      Object.entries(entries).forEach(([num,obj])=>{ fan[fbKey(num)]=obj; });
+      update(ref(db, ROOT), fan);
+    }catch(e){ console.warn('fbPushMany 실패', e); }
   };
   // 송장 1건 삭제
   window.fbRemoveScan = function(num){
@@ -183,7 +191,7 @@
   <div class="top">
     <div><h1>반품 양품화 · 입고</h1>
       <div class="sub">송장 찍어 조회 → 수량 확인 후 입고/불가 처리 · <span id="devTag" style="color:var(--blue)">이 기기: PC-1CO9</span>
-        · <span id="verTag" title="클릭하면 진단 정보" style="cursor:pointer;color:#8a93a5;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px">v2026-08-14b</span></div></div>
+        · <span id="verTag" title="클릭하면 진단 정보" style="cursor:pointer;color:#8a93a5;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px">v2026-08-20a</span></div></div>
     <div class="row">
       <button class="btn" id="labelBtn" style="background:#ffd84d;color:#000;border-color:#ffd84d">🏷 라벨 출력</button>
       <input type="date" id="dayDate" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);font-size:13px">
@@ -417,31 +425,83 @@ let palletLog={};
 let openPallet={};
 
 // 복원 (먼저 localStorage에서 — 오프라인이거나 Firebase 로딩 전에도 즉시 동작)
-let _needRebuild=false;
-try{const saved=JSON.parse(localStorage.getItem(LS_KEY)||'null');
-  if(saved){inbound=saved.inbound||{};inLogCount=saved.logCount||0;inQtyTotal=saved.qtyTotal||0;scanLog=saved.scanLog||{};rejected=saved.rejected||{};
-    palletLog=saved.palletLog||{};openPallet=saved.openPallet||{};
-    // 신형 저장본은 inbound/rejected를 담지 않는다 → scanLog에서 재계산 필요
-    if(!saved.inbound&&Object.keys(scanLog).length)_needRebuild=true;}}catch(e){}
+// ===== 저장소: IndexedDB =====
+// localStorage는 5MB 한도라 작업량이 쌓이면 저장이 실패해 새로고침 시 작업분이 사라졌다.
+// IndexedDB는 한도가 수백 MB이고 객체를 그대로 저장해(직렬화 불필요) 근본적으로 해결된다.
+const IDB_NAME='returns_store', IDB_KEY='state';
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    const q=indexedDB.open(IDB_NAME,1);
+    q.onupgradeneeded=()=>{ q.result.createObjectStore('kv'); };
+    q.onsuccess=()=>res(q.result);
+    q.onerror=()=>rej(q.error);
+  });
+}
+function idbSet(v){
+  return idbOpen().then(db=>new Promise((res,rej)=>{
+    const tx=db.transaction('kv','readwrite');
+    tx.objectStore('kv').put(v,IDB_KEY);
+    tx.oncomplete=()=>{db.close();res();};
+    tx.onerror=()=>{db.close();rej(tx.error);};
+  }));
+}
+function idbGet(){
+  return idbOpen().then(db=>new Promise((res,rej)=>{
+    const tx=db.transaction('kv','readonly');
+    const rq=tx.objectStore('kv').get(IDB_KEY);
+    rq.onsuccess=()=>{db.close();res(rq.result||null);};
+    rq.onerror=()=>{db.close();rej(rq.error);};
+  }));
+}
 
-// 저장 실패(용량 초과)를 조용히 삼키면 새로고침 시 작업분이 통째로 사라진다.
-// inbound/rejected는 scanLog에서 100% 복원 가능하므로 저장 대상에서 제외해 용량을 줄인다.
-let _saveErr=false, _saveWarnAt=0;
+let _saveErr=false, _saveWarnAt=0, _saveChain=Promise.resolve();
 function persist(){
-  try{
-    localStorage.setItem(LS_KEY,JSON.stringify({logCount:inLogCount,qtyTotal:inQtyTotal,scanLog,palletLog,openPallet}));
+  // 스냅샷을 즉시 떠서 순차 저장 (IDB는 비동기라 쓰기 순서 보장 필요)
+  const snap={logCount:inLogCount,qtyTotal:inQtyTotal,scanLog,palletLog,openPallet,savedAt:Date.now()};
+  const plain=JSON.parse(JSON.stringify(snap));   // 라이브 객체와 분리된 사본
+  _saveChain=_saveChain.then(()=>idbSet(plain)).then(()=>{
     if(_saveErr){_saveErr=false;showToast('✅ 저장 정상화됨',0);}
-  }catch(e){
+  }).catch(e=>{
     _saveErr=true;
     const now=Date.now();
-    if(now-_saveWarnAt>20000){        // 20초에 한 번만 경고 (토스트 폭주 방지)
+    if(now-_saveWarnAt>20000){
       _saveWarnAt=now;
-      showToast('⚠ 저장 실패! 브라우저 저장공간이 가득 찼습니다. 지금 엑셀로 내보낸 뒤 초기화하세요.',1);
+      showToast('⚠ 저장 실패! 지금 엑셀로 내보내 백업하세요.',1);
     }
     console.error('persist 실패',e);
-  }
+  });
 }
 function saveHealthy(){return !_saveErr;}
+
+// ── 복원 (비동기): IndexedDB 우선, 없으면 기존 localStorage에서 1회 이관 ──
+let _needRebuild=false, _restoreDone;
+const _restored=new Promise(r=>_restoreDone=r);
+(function restore(){
+  idbGet().then(saved=>{
+    if(!saved){
+      try{ saved=JSON.parse(localStorage.getItem(LS_KEY)||'null'); }catch(e){ saved=null; }
+      if(saved) console.log('[저장소] localStorage → IndexedDB 이관');
+    }
+    if(saved){
+      inbound=saved.inbound||{};inLogCount=saved.logCount||0;inQtyTotal=saved.qtyTotal||0;
+      scanLog=saved.scanLog||{};rejected=saved.rejected||{};
+      palletLog=saved.palletLog||{};openPallet=saved.openPallet||{};
+      if(Object.keys(scanLog).length)_needRebuild=true;
+    }
+    if(_needRebuild){try{rebuildFromLog();}catch(e){console.warn('초기 재계산 실패',e);}}
+    try{persist();}catch(e){}
+    try{refreshStats();renderInbound();renderReject();renderPalletBar();}catch(e){}
+    _restoreDone();
+  }).catch(e=>{
+    console.error('복원 실패',e);
+    try{
+      const saved=JSON.parse(localStorage.getItem(LS_KEY)||'null');
+      if(saved){scanLog=saved.scanLog||{};palletLog=saved.palletLog||{};openPallet=saved.openPallet||{};
+        rebuildFromLog();refreshStats();renderInbound();renderReject();}
+    }catch(_){}
+    _restoreDone();
+  });
+})();
 
 // ── 파레트 헬퍼 ──
 function pYmd(t){const d=new Date(t);return String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');}
@@ -546,6 +606,19 @@ function syncScan(num){
   if(typeof window.fbPushScan==='function' && scanLog[num]) window.fbPushScan(num, scanLog[num]);
 }
 // 파레트 1개 서버 동기화
+// 여러 송장을 200건씩 끊어 일괄 동기화 (기부 제출처럼 다건이 바뀔 때)
+function syncScanMany(nums){
+  if(_fbApplying)return;
+  const arr=[...new Set(nums)].filter(n=>scanLog[n]);
+  if(!arr.length)return;
+  if(typeof window.fbPushMany!=='function'){ arr.forEach(n=>syncScan(n)); return; }
+  for(let i=0;i<arr.length;i+=200){
+    const chunk={}; arr.slice(i,i+200).forEach(n=>chunk[n]=scanLog[n]);
+    window.fbPushMany(chunk);
+  }
+}
+// 품목 편집 시각 기록 — 병합에서 최신 편집이 이기게 하는 근거
+function touchItem(it){ it.mt=Date.now(); }
 function syncPallet(pid){
   if(_fbApplying)return;
   if(typeof window.fbPushPallet==='function' && palletLog[pid]) window.fbPushPallet(pid, palletLog[pid]);
@@ -555,10 +628,9 @@ function syncPalletAll(){
   if(_fbApplying)return;
   Object.keys(openPallet).forEach(wh=>{const pid=openPallet[wh];if(palletLog[pid])syncPallet(pid);});
 }
-if(_needRebuild){try{rebuildFromLog();}catch(e){console.warn('초기 재계산 실패',e);}}
-window.addEventListener('fbReady', startFirebaseSync);
+window.addEventListener('fbReady', ()=>{_restored.then(startFirebaseSync);});
 // 혹시 fbReady 이벤트를 놓쳤어도(스크립트 로드 순서) 안전하게 한 번 더 시도
-setTimeout(startFirebaseSync, 1500);
+setTimeout(()=>{_restored.then(startFirebaseSync);}, 1500);
 function refreshStats(){
   document.getElementById('cnt').textContent=Object.keys(DATA).length.toLocaleString();
   document.getElementById('okCnt').textContent=okCnt;
@@ -713,7 +785,7 @@ function key(it){return it.i+'|'+it.o+'|'+it.w}
 
 // ===== 버전 · 진단 =====
 // 현장에서 "그대로다"라고 할 때 구버전 캐시인지 실제 버그인지 즉시 가르기 위한 장치.
-const BUILD='2026-08-14b';
+const BUILD='2026-08-20a';
 window._errs=[];
 window.addEventListener('error',e=>{
   window._errs.push((e.message||'오류')+' @'+(e.filename||'').split('/').pop()+':'+(e.lineno||0));
@@ -722,12 +794,11 @@ window.addEventListener('error',e=>{
 window.addEventListener('unhandledrejection',e=>{
   window._errs.push('promise: '+String(e.reason).slice(0,80));
 });
-function lsBytes(){try{return (localStorage.getItem(LS_KEY)||'').length*2;}catch(e){return -1;}}
 function diagText(){
-  const mb=(lsBytes()/1024/1024).toFixed(2);
+  const mb=(JSON.stringify(scanLog).length*2/1024/1024).toFixed(2);
   return ['버전 '+BUILD,
     '기기 '+DEVICE,
-    '저장 '+mb+' MB / 5 MB '+(saveHealthy()?'(정상)':'(⚠ 실패 중)'),
+    '저장 IndexedDB · 데이터 '+mb+' MB '+(saveHealthy()?'(정상)':'(⚠ 실패 중)'),
     '송장 '+Object.keys(scanLog).length.toLocaleString()+'건',
     '입고목록 '+Object.keys(inbound).length+'품목 · 불가 '+Object.keys(rejected).length+'품목',
     '오류 '+window._errs.length+'건'+(window._errs.length?'\n  · '+window._errs.slice(-5).join('\n  · '):'')
@@ -847,6 +918,7 @@ function renderInbound(){
 }
 // 입고수량을 목표값(newQty)으로 조정 — scanLog(원본) + 파레트 내역을 함께 반영
 function adjustInboundQty(i,o,w,newQty){
+  const _touched=new Set(); let _tnum='';
   const k=i+'|'+o+'|'+w;
   const cur=inbound[k]?inbound[k].qty:0;
   let delta=newQty-cur;   // 음수=줄임, 양수=늘림
@@ -861,6 +933,7 @@ function adjustInboundQty(i,o,w,newQty){
           const take=Math.min(it.inQ,need);
           it.inQ-=take;
           if(it.rem!=null)it.rem+=take;   // 잔여수량 복원(다시 처리 가능)
+          touchItem(it);_touched.add(s.num);
           need-=take;
         }
       });
@@ -883,19 +956,20 @@ function adjustInboundQty(i,o,w,newQty){
     let target=null;
     Object.values(scanLog).forEach(s=>{
       (s.items||[]).forEach(it=>{
-        if((it.i+'|'+it.o+'|'+it.w)===k)target=it;
+        if((it.i+'|'+it.o+'|'+it.w)===k){target=it;_tnum=s.num;}
       });
     });
     if(target){
       target.inQ=(target.inQ||0)+delta;
       if(target.rem!=null)target.rem=Math.max(0,target.rem-delta);
+      touchItem(target);_touched.add(_tnum);
       pAdd(target,delta,'수정',Date.now());
     }else{showToast('원본 기록을 찾지 못해 늘릴 수 없습니다',1);return;}
   }
   rebuildFromLog();
   persist();
   // 동기화: 관련 송장 + 파레트 전체
-  Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
+  syncScanMany([..._touched]);
   try{syncPalletAll();}catch(e){}
   refreshStats();renderInbound();
   if(typeof renderPalletBar==='function')renderPalletBar();
@@ -951,6 +1025,7 @@ function donaDay(s){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 function donaSubmit(){
+  const _touched=new Set();
   const st=donaStat();
   if(st.pending<=0){showToast('미제출 기부가 없습니다',1);return;}
   const ans=prompt('기부 제출 처리\n\n확인서에 포함된 기준일을 입력하세요 (YYYY-MM-DD).\n그 날짜까지 처리된 미제출 기부만 제출됩니다.\n\n비워두면 전량 '+st.pending+'개를 제출합니다.','');
@@ -978,24 +1053,27 @@ function donaSubmit(){
     it.rejsDone[tag]=n;
     it.rejsB[tag]=bid;
     it.rejsAt=now;
+    touchItem(it);_touched.add(s.num);
   });
   rebuildFromLog();persist();
-  Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
+  syncScanMany([..._touched]);
   refreshStats();renderReject();
   showToast('📤 '+bid+' · 기부 '+cnt+'개 제출 처리'+(skip?(' (미제출 '+skip+'개 남김)'):''),0);
 }
 // 배치 되돌리기 (잘못 눌렀을 때 — 해당 배치만 미제출로 복원)
 function donaCancel(bid){
+  const _touched=new Set();
   if(!bid)return;
   let n=0;
   donaEach((s,it,tag)=>{
     if(((it.rejsB||{})[tag])!==bid)return;
     n+=Number((it.rejsDone||{})[tag]||0);
     delete it.rejsDone[tag];delete it.rejsB[tag];
+    touchItem(it);_touched.add(s.num);
   });
   if(!n){showToast('해당 배치를 찾지 못했습니다',1);return;}
   rebuildFromLog();persist();
-  Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
+  syncScanMany([..._touched]);
   refreshStats();renderReject();
   showToast('↩ '+bid+' 제출 취소 · '+n+'개 미제출로 복원',0);
 }
@@ -1081,6 +1159,7 @@ function renderReject(){
 // 줄인 만큼은 실제 송장이면 잔여(rem)로 되돌려 재처리할 수 있게 하고,
 // 수기 등록건(M-)은 되돌릴 원송장이 없으므로 잔여를 복원하지 않는다.
 function adjustRejectQty(i,o,w,tag,newQty){
+  const _touched=new Set();
   const k=i+'|'+o+'|'+w+'|'+tag;
   const cur=rejected[k]?rejected[k].qty:0;
   const delta=newQty-cur;
@@ -1098,6 +1177,7 @@ function adjustRejectQty(i,o,w,tag,newQty){
           it.rejs[tag]=have-take;
           if(it.rejs[tag]<=0)delete it.rejs[tag];
           if(!manual&&it.rem!=null)it.rem+=take;
+          touchItem(it);_touched.add(s.num);
           need-=take;
         }
       });
@@ -1105,26 +1185,28 @@ function adjustRejectQty(i,o,w,tag,newQty){
       if((s.items||[]).every(it=>!it.rejs||!Object.keys(it.rejs).length))s.rej=false;
     });
   }else{
-    let target=null,prefer=null;
+    let target=null,prefer=null,tnum='',pnum='';
     Object.values(scanLog).forEach(s=>{
       (s.items||[]).forEach(it=>{
-        if(match(it)&&it.rejs&&it.rejs[tag]!=null){target=it;if(!prefer&&(it.rem||0)>0)prefer=it;}
+        if(match(it)&&it.rejs&&it.rejs[tag]!=null){target=it;tnum=s.num;if(!prefer&&(it.rem||0)>0){prefer=it;pnum=s.num;}}
       });
     });
-    target=prefer||target;   // 잔여가 남은 항목이 있으면 거기서 먼저 차감
+    if(prefer){target=prefer;tnum=pnum;}   // 잔여가 남은 항목이 있으면 거기서 먼저 차감
     if(!target){showToast('원본 기록을 찾지 못해 늘릴 수 없습니다',1);return;}
     target.rejs[tag]=(target.rejs[tag]||0)+delta;
     if(target.rem!=null)target.rem=Math.max(0,target.rem-delta);
+    touchItem(target);_touched.add(tnum);
   }
   rebuildFromLog();
   persist();
-  Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
+  syncScanMany([..._touched]);
   refreshStats();renderInbound();renderReject();
   const d=splitDisp(tag);
   showToast(`✏ ${d.disp} 수량 수정: ${cur} → ${newQty}`,0);
 }
 // 불가 건의 처분구분·사유 변경 (기부 ↔ 폐기, 사유 문구 정정)
 function changeRejectTag(i,o,w,oldTag,newTag){
+  const _touched=new Set();
   if(!newTag||newTag===oldTag)return;
   const match=it=>(it.i+'|'+it.o+'|'+it.w)===(i+'|'+o+'|'+w);
   let moved=0;
@@ -1134,6 +1216,7 @@ function changeRejectTag(i,o,w,oldTag,newTag){
       if(match(it)&&have>0){
         it.rejs[newTag]=(it.rejs[newTag]||0)+have;
         delete it.rejs[oldTag];
+        touchItem(it);_touched.add(s.num);
         moved+=have;
       }
     });
@@ -1142,7 +1225,7 @@ function changeRejectTag(i,o,w,oldTag,newTag){
   if(!moved){showToast('변경할 기록을 찾지 못했습니다',1);return;}
   rebuildFromLog();
   persist();
-  Object.keys(scanLog).forEach(num=>{try{syncScan(num);}catch(e){}});
+  syncScanMany([..._touched]);
   refreshStats();renderReject();
   const a=splitDisp(oldTag),b=splitDisp(newTag);
   showToast(`🔀 ${a.disp}(${a.reason}) → ${b.disp}(${b.reason}) ${moved}개`,0);
@@ -1261,6 +1344,7 @@ function applyRem(num,picks,kind,reason){
     if(sit.rem!=null)sit.rem-=q;
     if(kind==='in'){sit.inQ=(sit.inQ||0)+q;}
     else if(kind==='rej'){if(!sit.rejs)sit.rejs={};sit.rejs[reason]=(sit.rejs[reason]||0)+q;}
+    touchItem(sit);
   });
   const allDone=sl.items.every(it=>(it.rem==null?0:it.rem)<=0);
   if(allDone){sl.dt=Date.now();staged.delete(num);doneSet.add(num);curShown=null;}
@@ -2343,6 +2427,11 @@ function mergeScanLog(incoming){
       if(!b) continue;
       if(!a){ A[i]=b; addProc+=qOf(b); continue; }
       if(a.i!==b.i) continue;                       // 품목이 어긋나면 건드리지 않음
+      // 편집 시각이 있으면 최신 편집이 통째로 이긴다.
+      // (max 병합만 쓰면 수량을 '줄인' 편집이 낡은 사본에 계속 되돌려진다)
+      const am=Number(a.mt||0), bm=Number(b.mt||0);
+      if(bm>am){ A[i]=b; continue; }
+      if(am>bm){ continue; }
       const before=qOf(a);
       a.inQ=Math.max(Number(a.inQ||0), Number(b.inQ||0));
       const tags=new Set([...Object.keys(a.rejs||{}), ...Object.keys(b.rejs||{})]);
