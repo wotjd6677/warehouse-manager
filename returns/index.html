@@ -191,7 +191,7 @@
   <div class="top">
     <div><h1>반품 양품화 · 입고</h1>
       <div class="sub">송장 찍어 조회 → 수량 확인 후 입고/불가 처리 · <span id="devTag" style="color:var(--blue)">이 기기: PC-1CO9</span>
-        · <span id="verTag" title="클릭하면 진단 정보" style="cursor:pointer;color:#8a93a5;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px">v2026-08-20a</span></div></div>
+        · <span id="verTag" title="클릭하면 진단 정보" style="cursor:pointer;color:#8a93a5;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px">v2026-08-28b</span></div></div>
     <div class="row">
       <button class="btn" id="labelBtn" style="background:#ffd84d;color:#000;border-color:#ffd84d">🏷 라벨 출력</button>
       <input type="date" id="dayDate" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);font-size:13px">
@@ -437,18 +437,18 @@ function idbOpen(){
     q.onerror=()=>rej(q.error);
   });
 }
-function idbSet(v){
+function idbSet(v,key){
   return idbOpen().then(db=>new Promise((res,rej)=>{
     const tx=db.transaction('kv','readwrite');
-    tx.objectStore('kv').put(v,IDB_KEY);
+    tx.objectStore('kv').put(v,key||IDB_KEY);
     tx.oncomplete=()=>{db.close();res();};
     tx.onerror=()=>{db.close();rej(tx.error);};
   }));
 }
-function idbGet(){
+function idbGet(key){
   return idbOpen().then(db=>new Promise((res,rej)=>{
     const tx=db.transaction('kv','readonly');
-    const rq=tx.objectStore('kv').get(IDB_KEY);
+    const rq=tx.objectStore('kv').get(key||IDB_KEY);
     rq.onsuccess=()=>{db.close();res(rq.result||null);};
     rq.onerror=()=>{db.close();rej(rq.error);};
   }));
@@ -461,6 +461,8 @@ function persist(){
   const plain=JSON.parse(JSON.stringify(snap));   // 라이브 객체와 분리된 사본
   _saveChain=_saveChain.then(()=>idbSet(plain)).then(()=>{
     if(_saveErr){_saveErr=false;showToast('✅ 저장 정상화됨',0);}
+    // IDB 저장이 확인됐으므로 localStorage에 남은 구버전 작업상태는 제거해 공간을 되찾는다
+    try{ if(localStorage.getItem(LS_KEY)) localStorage.removeItem(LS_KEY); }catch(e){}
   }).catch(e=>{
     _saveErr=true;
     const now=Date.now();
@@ -509,7 +511,9 @@ function pNextSeq(date,wh){let mx=0;Object.values(palletLog).forEach(p=>{if(p.da
 function pEnsureOpen(wh,t){
   const cur=openPallet[wh];
   if(cur&&palletLog[cur]&&!palletLog[cur].closed)return cur;
-  const date=pYmd(t),seq=pNextSeq(date,wh),id=date+'-'+wh+'-'+seq;
+  // ID에 기기 꼬리를 붙여 여러 대가 같은 날·같은 창고에서 동시에 열어도 절대 겹치지 않게 한다
+  const tag=String(typeof DEVICE!=='undefined'?DEVICE:'').replace(/^PC-/,'').slice(-4)||'X';
+  const date=pYmd(t),seq=pNextSeq(date,wh),id=date+'-'+wh+'-'+seq+'-'+tag;
   palletLog[id]={id,date,wh,seq,dev:(typeof DEVICE!=='undefined'?DEVICE:''),created:t,closed:0,printed:0,items:[]};
   openPallet[wh]=id;
   return id;
@@ -593,9 +597,17 @@ function startFirebaseSync(){
 function mergePallets(incoming){
   Object.entries(incoming).forEach(([pid,s])=>{
     const cur=palletLog[pid];
-    const cnt=o=>(o&&o.items?o.items.length:0);
     if(!cur){ palletLog[pid]=s; return; }
-    if(cnt(s)>cnt(cur) || (s.closed&&!cur.closed)) palletLog[pid]=s;  // 항목 더 많거나, 서버가 이미 마감했으면 채택
+    // 통째 교체 금지: 같은 ID를 두 기기가 만들었어도 적재 항목을 합집합으로 보존한다
+    cur.items=cur.items||[];
+    const seen=new Set(cur.items.map(x=>[x.inv,x.i,x.o,x.qty,x.t].join('|')));
+    (s.items||[]).forEach(x=>{
+      const k=[x.inv,x.i,x.o,x.qty,x.t].join('|');
+      if(!seen.has(k)){ cur.items.push(x); seen.add(k); }
+    });
+    if(s.closed&&!cur.closed)cur.closed=s.closed;
+    if(s.printed&&!cur.printed)cur.printed=s.printed;
+    if(!cur.dev&&s.dev)cur.dev=s.dev;
   });
 }
 // 서버로 push하지 않고 로컬 저장만
@@ -785,7 +797,7 @@ function key(it){return it.i+'|'+it.o+'|'+it.w}
 
 // ===== 버전 · 진단 =====
 // 현장에서 "그대로다"라고 할 때 구버전 캐시인지 실제 버그인지 즉시 가르기 위한 장치.
-const BUILD='2026-08-20a';
+const BUILD='2026-08-28b';
 window._errs=[];
 window.addEventListener('error',e=>{
   window._errs.push((e.message||'오류')+' @'+(e.filename||'').split('/').pop()+':'+(e.lineno||0));
@@ -801,6 +813,7 @@ function diagText(){
     '저장 IndexedDB · 데이터 '+mb+' MB '+(saveHealthy()?'(정상)':'(⚠ 실패 중)'),
     '송장 '+Object.keys(scanLog).length.toLocaleString()+'건',
     '입고목록 '+Object.keys(inbound).length+'품목 · 불가 '+Object.keys(rejected).length+'품목',
+    '업로드 클레임 '+Object.keys(typeof ADDED!=='undefined'?ADDED:{}).length.toLocaleString()+'건 '+(_claimSaveErr?'(⚠ 저장 실패 중)':'(저장 정상)'),
     '오류 '+window._errs.length+'건'+(window._errs.length?'\n  · '+window._errs.slice(-5).join('\n  · '):'')
   ].join('\n');
 }
@@ -1373,7 +1386,7 @@ function confirmInbound(num){
   if(dayFilter&&dayFilter!==_ymdOf(_now))
     showToast('⚠ '+dayFilter+' 날짜 필터가 켜져 있어 방금 입고분은 목록에 표시되지 않습니다',1);
   // 이번 입고가 어느 창고 파레트로 들어갔는지 안내
-  const whs=[...new Set(picks.map(({idx})=>list[idx].w||'미지정'))];
+  const whs=[...new Set(picks.map(({idx})=>palletGrp(list[idx].a)))];
   const palletMsg=whs.map(w=>w+'▶'+(openPallet[w]||'-')).join(' · ');
   if(allDone){
     showToast(`📦 입고완료 +${added} → ${palletMsg}`);
@@ -1622,20 +1635,23 @@ function markAdded(num,item){
   const dup=ADDED[num].find(x=>x.i===item.i&&x.o===item.o);
   if(!dup)ADDED[num].push(item);
 }
+// 업로드 누적분(ADDED)은 계속 커져 localStorage 5MB 한도를 넘기 때문에 IndexedDB에 저장한다.
+// 저장이 확인되기 전에는 '유지됨'이라고 말하지 않는다.
+let _claimSaveErr=false;
 function persistData(){
-  try{
-    localStorage.setItem(DATA_KEY,JSON.stringify(ADDED));
+  const plain=JSON.parse(JSON.stringify(ADDED));
+  return idbSet(plain,'claims').then(()=>{
+    _claimSaveErr=false;
+    try{ if(localStorage.getItem(DATA_KEY)) localStorage.removeItem(DATA_KEY); }catch(e){}
     return true;
-  }catch(e){
-    showToast('⚠ 조회데이터 저장 실패(용량 초과). 새로고침 시 초기화될 수 있습니다.',1);
+  }).catch(e=>{
+    _claimSaveErr=true;
+    console.error('클레임 저장 실패',e);
+    showToast('⚠ 조회데이터 저장 실패! 새로고침하면 이번 업로드분이 사라집니다. 다시 시도하거나 관리자에게 알리세요.',1);
     return false;
-  }
+  });
 }
-function restoreData(){
-  try{
-    const raw=localStorage.getItem(DATA_KEY);
-    if(!raw)return 0;
-    const saved=JSON.parse(raw);
+function _mergeSavedClaims(saved){
     if(!saved||typeof saved!=='object')return 0;
     let merged=0;
     Object.keys(saved).forEach(num=>{
@@ -1651,7 +1667,22 @@ function restoreData(){
       });
     });
     return merged;
-  }catch(e){return 0;}
+}
+// IndexedDB 우선, 없으면 예전 localStorage분을 1회 이관
+function restoreData(){
+  return idbGet('claims').then(saved=>{
+    if(saved) return _mergeSavedClaims(saved);
+    let old=null;
+    try{ old=JSON.parse(localStorage.getItem(DATA_KEY)||'null'); }catch(e){}
+    if(!old) return 0;
+    const n=_mergeSavedClaims(old);
+    console.log('[클레임] localStorage → IndexedDB 이관', n, '건');
+    persistData();
+    return n;
+  }).catch(e=>{
+    console.error('클레임 복원 실패',e);
+    try{ const old=JSON.parse(localStorage.getItem(DATA_KEY)||'null'); return old?_mergeSavedClaims(old):0; }catch(_){ return 0; }
+  });
 }
 function handleFiles(files){
   let done=0,tot=0;
@@ -1660,18 +1691,19 @@ function handleFiles(files){
       const ws=wb.Sheets[wb.SheetNames[0]];tot+=ingest(XLSX.utils.sheet_to_json(ws,{header:1,defval:''}));
     }catch(err){showToast('⚠ '+f.name+' 실패',1)}
     if(++done===files.length){
-      const ok=persistData();
       refreshStats();
-      showToast(`✓ ${tot.toLocaleString()}건 추가${ok?' (저장됨 · 새로고침해도 유지)':''}`);
+      showToast(`✓ ${tot.toLocaleString()}건 추가 · 저장 중…`);
+      persistData().then(ok=>{
+        showToast(ok?`✓ ${tot.toLocaleString()}건 저장 완료 (새로고침해도 유지)`:`⚠ 저장 실패 — 새로고침 금지, 다시 업로드하세요`, ok?0:1);
+      });
       inv.focus();
     }};
     reader.readAsArrayBuffer(f)});
 }
-// 페이지 로드 시 저장된 조회데이터 복원
-(function(){
-  const n=restoreData();
-  if(n>0)setTimeout(()=>{try{refreshStats();}catch(e){}},100);
-})();
+// 페이지 로드 시 저장된 조회데이터 복원 (IndexedDB, 비동기)
+restoreData().then(n=>{
+  if(n>0){try{refreshStats();}catch(e){} console.log('[클레임] 복원',n,'건');}
+});
 drop.addEventListener('click',()=>fileInput.click());
 fileInput.addEventListener('change',e=>handleFiles(e.target.files));
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});
