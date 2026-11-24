@@ -178,8 +178,8 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-mo
         <label class="grow" for="fText">찾기<input id="fText" type="search" placeholder="상품명, 코드, 요청자, 메모"></label>
       </div>
       <div class="uploads">
-        <button class="btn out" id="dlOut" type="button" disabled>출고 업로드 파일 받기</button>
-        <button class="btn in" id="dlIn" type="button" disabled>입고 업로드 파일 받기</button>
+        <button class="btn out" id="dlOut" type="button" disabled>출고 파일 받기</button>
+        <button class="btn in" id="dlIn" type="button" disabled>입고 파일 받기</button>
         <button class="btn ghost" id="dlLog" type="button">이 날짜 기록 내보내기</button>
         <button class="btn ghost" id="dlLog14" type="button">최근 2주 기록 내보내기</button>
       </div>
@@ -347,17 +347,20 @@ const ROOT = 'ledger';
     const day=$('day').value, fk=$('fKind').value,fr=$('fReason').value,ft=norm($('fText').value);
     const dayRows=entries.filter(r=>r.date===day).sort((a,b)=>a.at-b.at);
     const rows=dayRows.filter(r=>(!fk||r.kind===fk)&&(!fr||r.reason===fr)&&(!ft||norm([r.label,r.code,r.req,r.memo,r.reason,r.by].join(' ')).includes(ft)));
-    const pendOut=dayRows.filter(r=>r.kind==='out'&&!r.uploadedAt).length, pendIn=dayRows.filter(r=>r.kind==='in'&&!r.uploadedAt).length;
-    $('dlOut').textContent='출고 업로드 파일 받기 ('+pendOut+'건)'; $('dlIn').textContent='입고 업로드 파일 받기 ('+pendIn+'건)';
-    $('dlOut').disabled=!pendOut; $('dlIn').disabled=!pendIn;
+    [['out','dlOut'],['in','dlIn']].forEach(([k,id])=>{
+      const c=w=>dayRows.filter(r=>r.kind===k&&r.wh===w&&!r.uploadedAt).length; const a=c('1창고'),b2=c('2창고');
+      $(id).textContent=(k==='out'?'출고':'입고')+' 파일 받기 (1창고 '+a+' · 2창고 '+b2+')'; $(id).disabled=!(a+b2);
+    });
     const tb=$('tbody'); tb.replaceChildren();
     if(!rows.length){tb.appendChild(el('tr',{},[el('td',{colspan:'12',class:'empty',text:dayRows.length?'조건에 맞는 기록이 없어요.':'이 날짜에는 아직 기록이 없어요. 왼쪽에서 상품을 찾아 추가하세요.'})]));return}
     for(const r of rows){
       const t=new Date(r.at);
       const del=el('button',{class:'row-del',type:'button',text:'삭제'});
-      del.hidden=!!r.uploadedAt;
-      del.onclick=()=>{ if(del.dataset.arm!=='1'){del.dataset.arm='1';del.textContent='한 번 더 누르면 삭제';setTimeout(()=>{del.dataset.arm='';del.textContent='삭제'},3000);return}
-        remove(ref(fdb,ROOT+'/days/'+r.date+'/'+r.id)).catch(()=>fail('삭제하지 못했어요.')); };
+      del.onclick=()=>{
+        if(del.dataset.arm!=='1'){del.dataset.arm='1';del.textContent=r.uploadedAt?'사방넷에 올린 건이에요. 한 번 더 누르면 삭제':'한 번 더 누르면 삭제';setTimeout(()=>{del.dataset.arm='';del.textContent='삭제'},4000);return}
+        const fan={}; fan['days/'+r.date+'/'+r.id]=null; if(r.src)fan['wonroomDone/'+String(r.src).replace(/[.$#\[\]\/]/g,'_')]=null;
+        update(ref(fdb,ROOT),fan).then(()=>{const m=$('logMsg');m.className='msg';m.textContent=r.uploadedAt?'삭제했어요. 사방넷에 이미 올린 건이라면 사방넷 재고도 따로 되돌려주세요.':'삭제했어요.'}).catch(()=>fail('삭제하지 못했어요.'));
+      };
       const status=r.uploadedAt?el('span',{class:'pill done',text:'업로드 완료 '+pad(new Date(r.uploadedAt).getHours())+':'+pad(new Date(r.uploadedAt).getMinutes())}):el('span',{class:'pill wait',text:'업로드 전'});
       tb.appendChild(el('tr',{},[
         el('td',{class:'code',text:pad(t.getHours())+':'+pad(t.getMinutes())}),
@@ -377,24 +380,33 @@ const ROOT = 'ledger';
     const a=el('a',{href:url,download:fname}); document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),2000);
   }
-  function makeUpload(k){
+  function makeUpload(k,wh){
     const msg=$('logMsg'); msg.className='msg';
     if(!vendorId){msg.className='msg err';msg.textContent='먼저 왼쪽 아래 설정에서 매입처ID를 저장해주세요.';$('settings').open=true;return}
     const day=$('day').value;
-    const rows=entries.filter(r=>r.date===day&&r.kind===k&&!r.uploadedAt).sort((a,b)=>a.at-b.at);
+    const rows=entries.filter(r=>r.date===day&&r.kind===k&&r.wh===wh&&!r.uploadedAt).sort((a,b)=>a.at-b.at);
     if(!rows.length)return;
     const title=k==='out'?' 재고관리 > 출고관리(일반) > 샘플파일':' 재고관리 > 입고관리(일반) > 샘플파일';
     const header=k==='out'?['매입처ID','상품코드','가용수량','불용수량','바코드','상품명(참고)']:['매입처ID\n[필수]','상품코드\n[필수]','가용수량','불용수량','바코드','상품명(참고)'];
     const ws=XLSX.utils.aoa_to_sheet([[title],header,...rows.map(r=>[vendorId,r.code,r.qa||'',r.qb||'','',r.label||''])]);
     ws['!cols']=[{wch:14},{wch:14},{wch:10},{wch:10},{wch:16},{wch:48}];
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,k==='out'?'출고관리(일반)_샘플파일':'입고관리(일반)_샘플파일');
-    const fname=(k==='out'?'사방넷_출고_':'사방넷_입고_')+day.replace(/-/g,'')+'_'+rows.length+'건.xlsx';
+    const fname='사방넷_'+wh+'_'+(k==='out'?'출고_':'입고_')+day.replace(/-/g,'')+'_'+rows.length+'건.xlsx';
     download(XLSX.write(wb,{type:'array',bookType:'xlsx'}),fname);
     const at=Date.now(); const ids=new Set(rows.map(r=>r.id));
     const fan={}; rows.forEach(r=>{fan['days/'+r.date+'/'+r.id+'/uploadedAt']=at}); update(ref(fdb,ROOT),fan).catch(()=>fail('업로드 완료 표시를 저장하지 못했어요. 같은 건이 다시 담기지 않게 주의해주세요.'));
-    msg.textContent=fname+' 파일을 받았어요. 사방넷 대량입력에 올려주세요.';
+    return fname;
   }
-  $('dlOut').onclick=()=>makeUpload('out'); $('dlIn').onclick=()=>makeUpload('in');
+  async function makeUploadAll(k){
+    const day=$('day').value, names=[];
+    for(const w of ['1창고','2창고']){
+      if(!entries.some(r=>r.date===day&&r.kind===k&&r.wh===w&&!r.uploadedAt))continue;
+      const f=makeUpload(k,w); if(f)names.push(f);
+      await new Promise(res=>setTimeout(res,600));
+    }
+    if(names.length){const m=$('logMsg');m.className='msg';m.textContent=names.join(', ')+' 파일을 받았어요. 창고별로 사방넷 대량입력에 올려주세요.'}
+  }
+  $('dlOut').onclick=()=>makeUploadAll('out'); $('dlIn').onclick=()=>makeUploadAll('in');
 
   async function exportLog(from,to){
     const msg=$('logMsg'); msg.className='msg';
