@@ -87,6 +87,10 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-mo
 .btn.mv{background:var(--accent);color:var(--accent-ink)}
 .pill.m{background:var(--accent-soft);color:var(--accent)}
 [hidden]{display:none!important}
+.late{background:#FFF6D6;color:#6B4E00;border:1px solid #EBCB6B;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:600;margin:8px 0}
+tr.lrow td{background:#FFF9E3}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .late{background:#3A3115;color:#F0D88A;border-color:#6B5A22}:root:not([data-theme="light"]) tr.lrow td{background:#2E2814}}
+:root[data-theme="dark"] .late{background:#3A3115;color:#F0D88A;border-color:#6B5A22}:root[data-theme="dark"] tr.lrow td{background:#2E2814}
 .wontable .part{border-left:3px solid var(--line);padding-left:6px;margin-bottom:6px}.prow{display:flex;gap:4px;align-items:center;margin-top:3px}.prow input[type=search]{flex:1;min-width:0}.wontable .pn{width:52px;font-size:13px;padding:5px}
 button.mini{font-size:12px;padding:3px 8px;margin-top:4px;background:transparent;border:1px solid var(--line);border-radius:6px;color:inherit;cursor:pointer}
 </style></head><body><div class="wrap">
@@ -186,6 +190,7 @@ button.mini{font-size:12px;padding:3px 8px;margin-top:4px;background:transparent
         <label for="fKind">구분
           <select id="fKind"><option value="">전체</option><option value="out">출고</option><option value="in">입고</option><option value="move">이동</option></select>
         </label>
+        <label for="fStat">상태<select id="fStat"><option value="wait">업로드 전</option><option value="done">업로드 완료</option><option value="">전체</option></select></label>
         <label for="fReason">사유<select id="fReason"><option value="">전체</option></select></label>
         <label class="grow" for="fText">찾기<input id="fText" type="search" placeholder="상품명, 코드, 요청자, 메모"></label>
       </div>
@@ -204,8 +209,9 @@ button.mini{font-size:12px;padding:3px 8px;margin-top:4px;background:transparent
         <button class="btn ghost" id="dlRange" type="button">기간 기록 내보내기</button>
       </div>
       <div class="uploads">
-        <span class="sub" id="dlNote">업로드 파일에는 업로드 전 건만 담기고, 받으면 '업로드 완료'로 바뀝니다.</span>
+        <span class="sub" id="dlNote">업로드 파일에는 업로드 전 건만 담겨요. 지난 날짜에 안 올린 건도 함께 담겨요. 받은 건은 목록에서 빠지고 기록으로 남아요(상태 '업로드 완료').</span>
       </div>
+      <div class="late" id="lateNote" hidden></div>
       <div class="tablewrap">
         <table>
           <thead><tr><th>시간</th><th>구분</th><th>창고</th><th>사유</th><th>상품</th><th>가용</th><th>불용</th><th>요청자</th><th>메모</th><th>입력자</th><th>상태</th><th></th></tr></thead>
@@ -269,7 +275,7 @@ const ROOT = 'ledger';
   const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
 
   let products=[], byCode=new Map(), byBarcode=new Map(), byLoc=new Map(), setByLoc=new Map(), prodUpdated='', wonMap={};
-  let kind='out', picked=null, entries=[], vendorId="중국수입", unsubDay=null;
+  let kind='out', picked=null, entries=[], past=[], vendorId="중국수입", unsubDay=null;
 
   function setProducts(j){
     prodUpdated=j.updated;
@@ -371,36 +377,43 @@ const ROOT = 'ledger';
   $('day').value=today();
   const t14=new Date();t14.setDate(t14.getDate()-13);
   $('from').value=ymd(t14); $('to').value=today();
-  ['fKind','fReason','fText'].forEach(id=>$(id).addEventListener('input',render));
+  ['fKind','fStat','fReason','fText'].forEach(id=>$(id).addEventListener('input',render));
   $('day').addEventListener('change',listenDay);
   function listenDay(){
     if(unsubDay)unsubDay(); entries=[]; render();
     unsubDay=onValue(ref(fdb,ROOT+'/days/'+$('day').value),snap=>{const v=snap.val()||{};entries=Object.values(v);render()},()=>fail('기록을 불러오지 못했어요. 새로고침해 주세요.'));
   }
 
+  // 업로드 대상: 고른 날짜의 건 + 그 이전 날짜에 안 올린 건
+  const pool=()=>{const day=$('day').value;return entries.filter(r=>r.date===day).concat(past.filter(r=>r.date<day&&!r.uploadedAt))};
+  const pend=pred=>pool().filter(r=>!r.uploadedAt&&pred(r)).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.at-b.at);
+  const md=d=>d.slice(5).replace('-','/');
   function render(){
-    const day=$('day').value, fk=$('fKind').value,fr=$('fReason').value,ft=norm($('fText').value);
+    const day=$('day').value, fk=$('fKind').value,fs=$('fStat').value,fr=$('fReason').value,ft=norm($('fText').value);
     const dayRows=entries.filter(r=>r.date===day).sort((a,b)=>a.at-b.at);
-    const rows=dayRows.filter(r=>(!fk||r.kind===fk)&&(!fr||r.reason===fr)&&(!ft||norm([r.label,r.code,r.req,r.memo,r.reason,r.by].join(' ')).includes(ft)));
-    {const c=(f,t)=>dayRows.filter(r=>r.kind==='move'&&r.wh===f&&r.to===t&&!r.uploadedAt).length;const x=c('2창고','1창고'),y=c('1창고','2창고');
+    const late=pend(r=>r.date<day);
+    {const ln=$('lateNote'); if(late.length){const by={};late.forEach(r=>{by[r.date]=(by[r.date]||0)+1});ln.textContent='지난 날짜에 사방넷에 안 올린 건 '+late.length+'건 ('+Object.keys(by).sort().map(d=>md(d)+' '+by[d]+'건').join(', ')+')이 업로드 파일에 함께 담겨요. 아래 목록 맨 위 노란 줄에서 확인하세요.';ln.hidden=false}else ln.hidden=true;}
+    const base=(fs==='done'?dayRows:late.concat(dayRows));
+    const rows=base.filter(r=>(!fk||r.kind===fk)&&(!fs||(fs==='done'?!!r.uploadedAt:!r.uploadedAt))&&(!fr||r.reason===fr)&&(!ft||norm([r.label,r.code,r.req,r.memo,r.reason,r.by].join(' ')).includes(ft)));
+    {const c=(f,t)=>pend(r=>r.kind==='move'&&r.wh===f&&r.to===t).length;const x=c('2창고','1창고'),y=c('1창고','2창고');
       $('dlMove').textContent='이동 파일 받기 (2→1 '+x+' · 1→2 '+y+')';$('dlMove').disabled=!(x+y);}
     [['out','dlOut'],['in','dlIn']].forEach(([k,id])=>{
-      const c=w=>dayRows.filter(r=>r.kind===k&&r.wh===w&&!r.uploadedAt).length; const a=c('1창고'),b2=c('2창고');
+      const c=w=>pend(r=>r.kind===k&&r.wh===w).length; const a=c('1창고'),b2=c('2창고');
       $(id).textContent=(k==='out'?'출고':'입고')+' 파일 받기 (1창고 '+a+' · 2창고 '+b2+')'; $(id).disabled=!(a+b2);
     });
     const tb=$('tbody'); tb.replaceChildren();
-    if(!rows.length){tb.appendChild(el('tr',{},[el('td',{colspan:'12',class:'empty',text:dayRows.length?'조건에 맞는 기록이 없어요.':'이 날짜에는 아직 기록이 없어요. 왼쪽에서 상품을 찾아 추가하세요.'})]));return}
+    if(!rows.length){tb.appendChild(el('tr',{},[el('td',{colspan:'12',class:'empty',text:dayRows.length?(fs==='wait'&&dayRows.every(r=>r.uploadedAt)?'업로드할 건이 없어요. 사방넷에 올린 기록은 상태를 \'업로드 완료\'나 \'전체\'로 바꾸면 볼 수 있어요.':'조건에 맞는 기록이 없어요.'):'이 날짜에는 아직 기록이 없어요. 왼쪽에서 상품을 찾아 추가하세요.'})]));return}
     for(const r of rows){
       const t=new Date(r.at);
       const del=el('button',{class:'row-del',type:'button',text:'삭제'});
       del.onclick=()=>{
         if(del.dataset.arm!=='1'){del.dataset.arm='1';del.textContent=r.uploadedAt?'사방넷에 올린 건이에요. 한 번 더 누르면 삭제':'한 번 더 누르면 삭제';setTimeout(()=>{del.dataset.arm='';del.textContent='삭제'},4000);return}
-        const fan={}; fan['days/'+r.date+'/'+r.id]=null; if(r.src&&!entries.some(e=>e.src===r.src&&e.id!==r.id))fan['wonroomDone/'+String(r.src).replace(/[.$#\[\]\/]/g,'_')]=null;
+        const fan={}; fan['days/'+r.date+'/'+r.id]=null; if(r.src&&!entries.concat(past).some(e=>e.src===r.src&&e.id!==r.id))fan['wonroomDone/'+String(r.src).replace(/[.$#\[\]\/]/g,'_')]=null;
         update(ref(fdb,ROOT),fan).then(()=>{const m=$('logMsg');m.className='msg';m.textContent=r.uploadedAt?'삭제했어요. 사방넷에 이미 올린 건이라면 사방넷 재고도 따로 되돌려주세요.':'삭제했어요.'}).catch(()=>fail('삭제하지 못했어요.'));
       };
       const status=r.uploadedAt?el('span',{class:'pill done',text:'업로드 완료 '+pad(new Date(r.uploadedAt).getHours())+':'+pad(new Date(r.uploadedAt).getMinutes())}):el('span',{class:'pill wait',text:'업로드 전'});
-      tb.appendChild(el('tr',{},[
-        el('td',{class:'code',text:pad(t.getHours())+':'+pad(t.getMinutes())}),
+      tb.appendChild(el('tr',{class:r.date<day?'lrow':''},[
+        el('td',{class:'code',text:(r.date!==day?md(r.date)+' ':'')+pad(t.getHours())+':'+pad(t.getMinutes())}),
         el('td',{},[el('span',{class:'pill '+(KC[r.kind]||'o'),text:KN[r.kind]||r.kind})]),
         el('td',{text:r.kind==='move'?r.wh+'→'+r.to:r.wh}),el('td',{text:r.reason}),
         el('td',{},[el('div',{text:r.label}),el('div',{class:'code',text:r.code})]),
@@ -421,7 +434,7 @@ const ROOT = 'ledger';
     const msg=$('logMsg'); msg.className='msg';
     if(!vendorId){msg.className='msg err';msg.textContent='먼저 왼쪽 아래 설정에서 매입처ID를 저장해주세요.';$('settings').open=true;return}
     const day=$('day').value;
-    const rows=entries.filter(r=>r.date===day&&r.kind===k&&r.wh===wh&&!r.uploadedAt).sort((a,b)=>a.at-b.at);
+    const rows=pend(r=>r.kind===k&&r.wh===wh);
     if(!rows.length)return;
     const title=k==='out'?' 재고관리 > 출고관리(일반) > 샘플파일':' 재고관리 > 입고관리(일반) > 샘플파일';
     const header=k==='out'?['매입처ID','상품코드','가용수량','불용수량','바코드','상품명(참고)']:['매입처ID\n[필수]','상품코드\n[필수]','가용수량','불용수량','바코드','상품명(참고)'];
@@ -437,7 +450,7 @@ const ROOT = 'ledger';
   async function makeUploadAll(k){
     const day=$('day').value, names=[];
     for(const w of ['1창고','2창고']){
-      if(!entries.some(r=>r.date===day&&r.kind===k&&r.wh===w&&!r.uploadedAt))continue;
+      if(!pend(r=>r.kind===k&&r.wh===w).length)continue;
       const f=makeUpload(k,w); if(f)names.push(f);
       await new Promise(res=>setTimeout(res,600));
     }
@@ -446,7 +459,7 @@ const ROOT = 'ledger';
   async function makeMoveAll(){
     const day=$('day').value, names=[];
     for(const [f,t] of [['2창고','1창고'],['1창고','2창고']]){
-      const rows=entries.filter(r=>r.date===day&&r.kind==='move'&&r.wh===f&&r.to===t&&!r.uploadedAt).sort((a,b)=>a.at-b.at);
+      const rows=pend(r=>r.kind==='move'&&r.wh===f&&r.to===t);
       if(!rows.length)continue;
       const ws=XLSX.utils.aoa_to_sheet([[' 재고관리 > 출고관리(일반) > 창고이동 > 샘플파일'],['상품코드\n[필수]','가용수량','불용수량','바코드','상품명(참고)'],...rows.map(r=>[r.code,r.qa||'',r.qb||'','',r.label||''])]);
       ws['!cols']=[{wch:14},{wch:10},{wch:10},{wch:16},{wch:48}];
@@ -613,6 +626,9 @@ const ROOT = 'ledger';
   };
 
   listenDay();
+  // 지난 60일 중 사방넷에 안 올린 건
+  {const f=new Date();f.setDate(f.getDate()-60);const y=new Date();y.setDate(y.getDate()-1);
+   onValue(query(ref(fdb,ROOT+'/days'),orderByKey(),startAt(ymd(f)),endAt(ymd(y))),snap=>{const v=snap.val()||{};past=[];for(const d in v)for(const id in v[d]){const r=v[d][id];if(r&&!r.uploadedAt)past.push(r)}render()},()=>{});}
   let offTimer=null;
   onValue(ref(fdb,'.info/connected'),s=>{const b=$('banner');clearTimeout(offTimer);if(s.val()===true){b.hidden=true}else{offTimer=setTimeout(()=>{b.hidden=false;b.textContent='서버에 연결되지 않았어요. 인터넷 연결을 확인해주세요. 연결되면 자동으로 이어집니다.'},4000)}});
 })();
