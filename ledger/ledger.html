@@ -1,4 +1,5 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>재고 입출고 기록부</title><style>body{margin:0}
+
 /* Layout: two-pane work sheet. Left = add a record (search → fill → add). Right = the day's ledger with upload-file buttons. Stacks on phones. */
 :root{
   --bg:#EEF1F4; --paper:#FFFFFF; --ink:#18202A; --muted:#5E6A78; --line:#D6DCE3; --soft:#F5F7F9;
@@ -86,6 +87,8 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-mo
 .btn.mv{background:var(--accent);color:var(--accent-ink)}
 .pill.m{background:var(--accent-soft);color:var(--accent)}
 [hidden]{display:none!important}
+.wontable .part{border-left:3px solid var(--line);padding-left:6px;margin-bottom:6px}.prow{display:flex;gap:4px;align-items:center;margin-top:3px}.prow input[type=search]{flex:1;min-width:0}.wontable .pn{width:52px;font-size:13px;padding:5px}
+button.mini{font-size:12px;padding:3px 8px;margin-top:4px;background:transparent;border:1px solid var(--line);border-radius:6px;color:inherit;cursor:pointer}
 </style></head><body><div class="wrap">
   <header>
     <div>
@@ -265,7 +268,7 @@ const ROOT = 'ledger';
   const el=(t,props,kids)=>{const e=document.createElement(t);if(props)for(const k in props){if(k==='text')e.textContent=props[k];else if(k==='class')e.className=props[k];else e.setAttribute(k,props[k])}(kids||[]).forEach(c=>c&&e.appendChild(c));return e};
   const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
 
-  let products=[], byCode=new Map(), byBarcode=new Map(), byLoc=new Map(), prodUpdated='', wonMap={};
+  let products=[], byCode=new Map(), byBarcode=new Map(), byLoc=new Map(), setByLoc=new Map(), prodUpdated='', wonMap={};
   let kind='out', picked=null, entries=[], vendorId="중국수입", unsubDay=null;
 
   function setProducts(j){
@@ -273,13 +276,16 @@ const ROOT = 'ledger';
     const all=j.rows.map(r=>({code:r[0],barcode:r[1],name:r[2],option:r[3],alias:r[4],loc:r[5],abbr:String(r[7]||'').trim(),optgb:String(r[8]||''),link:String(r[9]||'').trim(),mgmt:String(r[10]||'')}));
     const isSku=o=>(o.optgb===''||o.optgb==='3')&&!o.link&&o.mgmt!=='N';
     products=all.filter(isSku); products.forEach(o=>{o.key=norm([o.alias,o.name,o.option,o.code,o.loc].join(' '))});
-    byCode=new Map();byBarcode=new Map();byLoc=new Map();
+    byCode=new Map();byBarcode=new Map();byLoc=new Map();setByLoc=new Map();
     products.forEach(p=>{byCode.set(p.code,p);if(p.barcode)byBarcode.set(p.barcode,p)});
     // 모음전처럼 SKU 하나를 가리키는 코드는 그 SKU로 바꿔서 연결 (세트는 제외)
     const toSku=o=>{if(isSku(o))return o;const parts=o.link.split(',').map(x=>x.trim()).filter(Boolean);if(parts.length!==1)return null;const [c,n]=parts[0].split(':');if(n&&n.trim()!==''&&n.trim()!=='0'&&n.trim()!=='1')return null;return byCode.get(c.trim())||null};
     all.forEach(o=>{const sk=toSku(o);if(!sk)return;if(o.barcode&&!byBarcode.has(o.barcode))byBarcode.set(o.barcode,sk);if(o.loc){if(!byLoc.has(o.loc))byLoc.set(o.loc,[]);const L=byLoc.get(o.loc);if(!L.includes(sk))L.push(sk)}});
+    // 사방넷 세트 상품(구성품 여러 개) → 구성품 목록
+    all.forEach(o=>{if(isSku(o)||!o.link||!o.loc||toSku(o)||setByLoc.has(o.loc))return;const ps=parseParts(o.link);if(ps)setByLoc.set(o.loc,ps)});
     $('prodInfo').textContent='SKU '+products.length.toLocaleString('ko-KR')+'개 · 목록 기준 '+prodUpdated;
   }
+  function parseParts(v){if(!v)return null;const ps=String(v).split(',').map(x=>x.trim()).filter(Boolean).map(x=>{const [c,n]=x.split(':');return {code:c.trim(),n:Math.max(1,parseInt(n,10)||1)}});return ps.length&&ps.every(x=>byCode.has(x.code))?ps:null}
   const EMBED=JSON.parse(document.getElementById('prod').textContent);
   setProducts(EMBED);
   get(ref(fdb,ROOT+'/productsMeta')).then(m=>{const meta=m.val(); if(meta&&meta.updatedAt&&meta.updatedAt>(EMBED.updatedAt||0)){ return get(ref(fdb,ROOT+'/products')).then(p=>{const j=p.val(); if(j&&j.rows&&j.rows.length&&j.rows[0].length>=11){setProducts(j); render()}}) }}).catch(()=>{});
@@ -389,7 +395,7 @@ const ROOT = 'ledger';
       const del=el('button',{class:'row-del',type:'button',text:'삭제'});
       del.onclick=()=>{
         if(del.dataset.arm!=='1'){del.dataset.arm='1';del.textContent=r.uploadedAt?'사방넷에 올린 건이에요. 한 번 더 누르면 삭제':'한 번 더 누르면 삭제';setTimeout(()=>{del.dataset.arm='';del.textContent='삭제'},4000);return}
-        const fan={}; fan['days/'+r.date+'/'+r.id]=null; if(r.src)fan['wonroomDone/'+String(r.src).replace(/[.$#\[\]\/]/g,'_')]=null;
+        const fan={}; fan['days/'+r.date+'/'+r.id]=null; if(r.src&&!entries.some(e=>e.src===r.src&&e.id!==r.id))fan['wonroomDone/'+String(r.src).replace(/[.$#\[\]\/]/g,'_')]=null;
         update(ref(fdb,ROOT),fan).then(()=>{const m=$('logMsg');m.className='msg';m.textContent=r.uploadedAt?'삭제했어요. 사방넷에 이미 올린 건이라면 사방넷 재고도 따로 되돌려주세요.':'삭제했어요.'}).catch(()=>fail('삭제하지 못했어요.'));
       };
       const status=r.uploadedAt?el('span',{class:'pill done',text:'업로드 완료 '+pad(new Date(r.uploadedAt).getHours())+':'+pad(new Date(r.uploadedAt).getMinutes())}):el('span',{class:'pill wait',text:'업로드 전'});
@@ -507,16 +513,19 @@ const ROOT = 'ledger';
         const src=String(r[c.src]||'')||(String(r[c.order]||'')+'-'+ext);
         const vendor=c.vendor>=0?String(r[c.vendor]||'').trim():'';
         const cands=byLoc.get(ext)||[];
-        const mapped=wonMap[fbKey(ext)];
-        let pick=mapped&&byCode.has(mapped)?mapped:(cands.length===1?cands[0].code:'');
-        out.push({src,order:String(r[c.order]||''),name:String(r[c.name]||''),opt:String(r[c.opt]||''),ext,qty,vendor,cands,pick,
-          wh:pick?whFor(byCode.get(pick)):'',include:true,dup:false});
+        const mapped=parseParts(wonMap[fbKey(ext)]), sbl=setByLoc.get(ext);
+        const parts=mapped?mapped.map(x=>({...x})):(cands.length===1?[{code:cands[0].code,n:1}]:(sbl?sbl.map(x=>({...x})):[{code:'',n:1}]));
+        const w={src,order:String(r[c.order]||''),name:String(r[c.name]||''),opt:String(r[c.opt]||''),ext,qty,vendor,cands,parts,
+          how:mapped?'map':(cands.length===1?'loc':(sbl?'set':'')),include:true,dup:false};
+        w.wh=partsWh(w); out.push(w);
       }
     }
     if(!out.length){if(!msg.textContent){msg.className='msg err';msg.textContent='주문서에서 읽을 줄이 없어요.'}$('wonPanel').hidden=false;wonRows=[];renderWon();return}
     await Promise.all(out.map(async w=>{try{const s=await get(ref(fdb,ROOT+'/wonroomDone/'+fbKey(w.src)));if(s.exists()){w.dup=true;w.include=false}}catch(e){}}));
     wonRows=out; $('wonAllWh').value=''; $('wonPanel').hidden=false; renderWon(); $('wonPanel').scrollIntoView({behavior:'smooth',block:'start'});
   };
+  const partsOk=w=>w.parts.length&&w.parts.every(x=>x.code&&byCode.has(x.code)&&x.n>0);
+  function partsWh(w){const ws=[...new Set(w.parts.filter(x=>byCode.has(x.code)).map(x=>whFor(byCode.get(x.code))))];return ws.length===1?ws[0]:''}
   function prodOptions(sel,list,cur){
     sel.replaceChildren(el('option',{value:'',text:'— 사방넷 상품 선택 —'}),...list.map(p=>{const o=el('option',{value:p.code,text:label(p)+'  ('+p.code+')'});if(p.code===cur)o.selected=true;return o}));
   }
@@ -524,18 +533,32 @@ const ROOT = 'ledger';
     const tb=$('wonBody'); tb.replaceChildren();
     let ready=0,need=0,dup=0;
     wonRows.forEach((w,i)=>{
-      if(w.dup)dup++; else if(w.include&&w.pick&&w.wh)ready++; else if(w.include)need++;
+      const ok=partsOk(w);
+      if(w.dup)dup++; else if(w.include&&ok&&w.wh)ready++; else if(w.include)need++;
       const cb=el('input',{type:'checkbox','aria-label':'포함'}); cb.checked=w.include; cb.disabled=w.dup; cb.onchange=()=>{w.include=cb.checked;renderWon()};
-      const cell=el('td',{});
-      const sel=el('select',{'aria-label':'사방넷 상품'});
-      let list=w.cands.slice(); if(w.pick&&!list.some(p=>p.code===w.pick)&&byCode.has(w.pick))list.unshift(byCode.get(w.pick));
-      prodOptions(sel,list,w.pick); sel.onchange=()=>{w.pick=sel.value;const p=byCode.get(w.pick);w.wh=p?whFor(p):'';renderWon()};
-      const find=el('input',{type:'search',placeholder:'다른 상품 찾기','aria-label':'다른 상품 찾기'});
-      find.oninput=()=>{const terms=find.value.toLowerCase().split(/\s+/).filter(Boolean).map(norm);if(!terms.length){prodOptions(sel,list,w.pick);return}
-        const res=[];for(const p of products){if(terms.every(t=>p.key.includes(t))){res.push(p);if(res.length>=15)break}}prodOptions(sel,res,w.pick)};
-      cell.append(sel,find);
+      const cell=el('td',{}); const multi=w.parts.length>1;
+      w.parts.forEach((pt,j)=>{
+        const box=el('div',{class:multi?'part':''});
+        const sel=el('select',{'aria-label':'사방넷 상품'});
+        let list=j===0?w.cands.slice():[]; if(pt.code&&!list.some(p=>p.code===pt.code)&&byCode.has(pt.code))list.unshift(byCode.get(pt.code));
+        prodOptions(sel,list,pt.code); sel.onchange=()=>{pt.code=sel.value;w.how='';w.wh=partsWh(w);renderWon()};
+        const find=el('input',{type:'search',placeholder:multi?'구성품 찾기':'다른 상품 찾기','aria-label':'상품 찾기'});
+        find.oninput=()=>{const terms=find.value.toLowerCase().split(/\s+/).filter(Boolean).map(norm);if(!terms.length){prodOptions(sel,list,pt.code);return}
+          const res=[];for(const p of products){if(terms.every(t=>p.key.includes(t))){res.push(p);if(res.length>=15)break}}prodOptions(sel,res,pt.code)};
+        box.append(sel);
+        if(multi){
+          const n=el('input',{type:'number',min:'1',value:String(pt.n),'aria-label':'세트 1개당 개수',class:'pn'}); n.onchange=()=>{pt.n=Math.max(1,parseInt(n.value,10)||1);w.how='';renderWon()};
+          const x=el('button',{type:'button',class:'mini',text:'빼기'}); x.onclick=()=>{w.parts.splice(j,1);w.how='';w.wh=partsWh(w);renderWon()};
+          box.append(el('div',{class:'prow'},[find,el('span',{class:'code',text:'×'}),n,x]));
+        } else box.append(find);
+        cell.append(box);
+      });
+      const add=el('button',{type:'button',class:'mini',text:'+ 구성품 추가 (세트)'}); add.onclick=()=>{w.parts.push({code:'',n:1});w.how='';renderWon()};
+      cell.append(add);
+      if(multi&&ok)cell.append(el('div',{class:'code',text:'주문 '+w.qty+'개 → '+w.parts.map(x=>(byCode.get(x.code).option||label(byCode.get(x.code)))+' '+(w.qty*x.n)+'개').join(', ')}));
       const wh=el('select',{'aria-label':'창고'});wh.appendChild(el('option',{value:'',text:'— 선택 —'}));['1창고','2창고'].forEach(x=>{const o=el('option',{text:x});if(x===w.wh)o.selected=true;wh.appendChild(o)}); wh.onchange=()=>{w.wh=wh.value;renderWon()};
-      const st=w.dup?el('span',{class:'pill done',text:'이미 기록됨'}):(!w.pick?el('span',{class:'need',text:'상품 선택 필요'}):!w.wh?el('span',{class:'need',text:'창고 선택 필요'}):(w.cands.length>1&&!wonMap[fbKey(w.ext)]?el('span',{class:'pill wait',text:'후보 '+w.cands.length+'개 중 확인'}):el('span',{class:'pill i',text:'연결됨'})));
+      const st=w.dup?el('span',{class:'pill done',text:'이미 기록됨'}):(!ok?el('span',{class:'need',text:'상품 선택 필요'}):!w.wh?el('span',{class:'need',text:'창고 선택 필요'}):
+        (w.how==='set'?el('span',{class:'pill wait',text:'사방넷 세트 구성 · 확인'}):(w.how===''&&w.cands.length>1&&!multi?el('span',{class:'pill wait',text:'후보 '+w.cands.length+'개 중 확인'}):el('span',{class:'pill i',text:multi?'세트 연결됨':'연결됨'}))));
       tb.appendChild(el('tr',{class:(w.include&&!w.dup)?'':'skip'},[el('td',{},[cb]),el('td',{},[el('div',{text:w.name}),el('div',{class:'code',text:w.opt})]),el('td',{class:'code',text:w.ext+(w.vendor?' · '+w.vendor:'')}),el('td',{class:'num',text:String(w.qty)}),cell,el('td',{},[wh]),el('td',{},[st])]));
     });
     $('wonSum').textContent='기록할 줄 '+ready+'개'+(need?' · 선택이 필요한 줄 '+need+'개':'')+(dup?' · 이미 기록됨 '+dup+'개':'');
@@ -544,17 +567,20 @@ const ROOT = 'ledger';
   $('wonCancel').onclick=()=>{$('wonPanel').hidden=true;wonRows=[]};
   $('wonAllWh').onchange=()=>{const v=$('wonAllWh').value;if(!v)return;wonRows.forEach(w=>{if(!w.dup&&!w.wh)w.wh=v});renderWon()};
   $('wonGo').onclick=async()=>{
-    const msg=$('wonMsg'); msg.className='msg'; const go=wonRows.filter(w=>w.include&&!w.dup&&w.pick&&w.wh); if(!go.length)return;
+    const msg=$('wonMsg'); msg.className='msg'; const go=wonRows.filter(w=>w.include&&!w.dup&&partsOk(w)&&w.wh); if(!go.length)return;
     $('wonGo').disabled=true; msg.textContent='기록하는 중';
     const date=today(), fan={}, by=$('me').value.trim(); let n=0;
     for(const w of go){
-      const p=byCode.get(w.pick); const now=Date.now()+n++;
-      const id='w'+now+Math.random().toString(36).slice(2,6);
-      fan['days/'+date+'/'+id]={id,date,at:now,kind:'out',wh:w.wh,reason:'원룸 출고',code:p.code,barcode:p.barcode||'',label:label(p),qa:w.qty,qb:0,req:'원룸만들기',memo:w.order+(w.vendor?' / '+w.vendor:''),by,uploadedAt:0,src:w.src};
-      fan['wonroomDone/'+fbKey(w.src)]={date,id,at:now};
-      if(!(w.cands.length===1&&w.cands[0].code===w.pick)) fan['wonroomMap/'+fbKey(w.ext)]=w.pick;
+      const set=w.parts.length>1||w.parts[0].n>1; let first='';
+      for(const pt of w.parts){
+        const p=byCode.get(pt.code); const now=Date.now()+n++;
+        const id='w'+now+Math.random().toString(36).slice(2,6); if(!first)first=id;
+        fan['days/'+date+'/'+id]={id,date,at:now,kind:'out',wh:w.wh,reason:'원룸 출고',code:p.code,barcode:p.barcode||'',label:label(p),qa:w.qty*pt.n,qb:0,req:'원룸만들기',memo:w.order+(w.vendor?' / '+w.vendor:'')+(set?' / 세트 '+w.ext:''),by,uploadedAt:0,src:w.src};
+      }
+      fan['wonroomDone/'+fbKey(w.src)]={date,id:first,at:Date.now()};
+      if(!(w.parts.length===1&&w.parts[0].n===1&&w.cands.length===1&&w.cands[0].code===w.parts[0].code)) fan['wonroomMap/'+fbKey(w.ext)]=(w.parts.length===1&&w.parts[0].n===1)?w.parts[0].code:w.parts.map(x=>x.code+':'+x.n).join(',');
     }
-    try{await update(ref(fdb,ROOT),fan); msg.textContent='원룸 출고 '+go.length+'건을 기록했어요. 오른쪽 기록과 출고 업로드 파일에 들어갔어요.'; $('wonPanel').hidden=true; wonRows=[];
+    try{await update(ref(fdb,ROOT),fan); const ne=go.reduce((a,w)=>a+w.parts.length,0); msg.textContent='원룸 주문 '+go.length+'줄을 출고 '+ne+'건으로 기록했어요. 오른쪽 기록과 출고 업로드 파일에 들어갔어요.'; $('wonPanel').hidden=true; wonRows=[];
       if($('day').value!==date){$('day').value=date;listenDay()} }
     catch(e){msg.className='msg err';msg.textContent='저장하지 못했어요. 인터넷 연결을 확인하고 다시 눌러주세요.';$('wonGo').disabled=false}
   };
