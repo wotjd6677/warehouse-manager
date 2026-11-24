@@ -87,6 +87,7 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-mo
 .btn.mv{background:var(--accent);color:var(--accent-ink)}
 .pill.m{background:var(--accent-soft);color:var(--accent)}
 [hidden]{display:none!important}
+.rhint{display:block;font-weight:400;font-size:12px;color:var(--muted);margin-top:3px;line-height:1.4}
 .late{background:#FFF6D6;color:#6B4E00;border:1px solid #EBCB6B;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:600;margin:8px 0}
 tr.lrow td{background:#FFF9E3}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .late{background:#3A3115;color:#F0D88A;border-color:#6B5A22}:root:not([data-theme="light"]) tr.lrow td{background:#2E2814}}
@@ -149,6 +150,7 @@ button.mini{font-size:12px;padding:3px 8px;margin-top:4px;background:transparent
         </label>
         <label for="reason">사유
           <select id="reason"></select>
+          <small class="rhint" id="reasonHint"></small>
         </label>
         <label for="qa">가용수량 (정상)
           <input id="qa" type="number" min="0" step="1" inputmode="numeric" value="1">
@@ -259,12 +261,35 @@ const app = initializeApp({
 const fdb = getDatabase(app);
 const ROOT = 'ledger';
 (function(){
-  const REASONS={
-    out:['개별 출고(CS)','원룸 출고','외부 발주(하이마트·롯데마트 등)','샘플·퀵','오배송','폐기','기타'],
-    in:['컨테이너·초도 입고','반품 재입고','오배송','기타'],
-    move:['재고 보충','공간 정리','기타']
+  // 사유: [묶음, [사유...]]
+  const RG={
+    out:[['CS 대응',['교환 출고','재출고(불량·파손)','재출고(오배송·누락)','구성품 출고']],
+         ['판매',['개별 구매','원룸 출고','외부 발주(하이마트·롯데마트 등)']],
+         ['마케팅',['샘플','협찬','리뷰이벤트']],
+         ['재고 정정',['매핑오류 정정','폐기']],
+         ['그 밖',['기타']]],
+    in:[['입고',['컨테이너·초도 입고']],
+        ['회수',['반품 재입고','교환 회수','취소 회수','오배송 회수','불량·파손 회수']],
+        ['재고 정정',['매핑오류 정정']],
+        ['그 밖',['기타']]],
+    move:[['이동',['재고 보충','공간 정리','기타']]]
   };
-  const ALL_REASONS=[...new Set([...REASONS.out,...REASONS.in,...REASONS.move])];
+  const REASONS={}; for(const k in RG)REASONS[k]=RG[k].flatMap(g=>g[1]);
+  const HINT={
+    '교환 출고':'고객 교환으로 새 상품을 보낼 때. 돌아온 상품은 입고 > 교환 회수로 남겨주세요.',
+    '재출고(불량·파손)':'받은 상품이 불량·파손이라 다시 보낼 때. 메모에 주문번호를 적어주세요.',
+    '재출고(오배송·누락)':'다른 상품이 가거나 빠져서 다시 보낼 때. 메모에 주문번호를 적어주세요.',
+    '구성품 출고':'본품 없이 부품·구성품만 보낼 때.',
+    '개별 구매':'전화·CS로 들어온 주문처럼 사방넷 주문으로 잡히지 않은 판매.',
+    '매핑오류 정정':'사방넷 매핑이 잘못돼 다른 상품이 차감된 경우. 실제 나간 상품은 출고, 잘못 차감된 상품은 입고로 각각 남겨주세요.',
+    '폐기':'창고에서 폐기 보고가 온 상품. 기록 후 팀장이 최종 확인하고 폐기해요.',
+    '취소 회수':'출고 처리 후 취소돼 상품이 돌아왔을 때.',
+    '불량·파손 회수':'불량·파손 상품이 돌아왔을 때. 수량은 불용수량 칸에 넣어주세요.',
+    '반품 재입고':'반품된 상품 중 다시 팔 수 있는 것(양품).',
+    '샘플':'거래처·내부 확인용 샘플.', '협찬':'인플루언서·업체 협찬 발송.', '리뷰이벤트':'리뷰 이벤트 당첨·체험단 발송.'
+  };
+  const OLD_REASONS=['개별 출고(CS)','샘플·퀵','오배송','반품 재입고'];
+  const ALL_REASONS=[...new Set([...REASONS.out,...REASONS.in,...REASONS.move,...OLD_REASONS])];
   const KN={out:'출고',in:'입고',move:'이동'}, KC={out:'o',in:'i',move:'m'};
   const $=id=>document.getElementById(id);
   const pad=n=>String(n).padStart(2,'0');
@@ -347,7 +372,9 @@ const ROOT = 'ledger';
     $('wh2Box').hidden=k!=='move';$('whLabel').textContent=k==='move'?'출발 창고':'창고';
     if(k==='move'){$('wh').value='';$('wh2').value='';$('whHint').className='msg';$('whHint').textContent='출발 창고와 도착 창고를 골라주세요.'}else if(picked){const w=whFor(picked);$('wh').value=w;$('whHint').className='msg'+(w?'':' err');$('whHint').textContent=whWhy(picked)}else{$('wh').value='';$('whHint').className='msg';$('whHint').textContent=''}
     fillReasons();updateAdd()}
-  function fillReasons(){const s=$('reason');const prev=s.value;s.replaceChildren(...REASONS[kind].map(r=>el('option',{text:r})));if(REASONS[kind].includes(prev))s.value=prev}
+  function fillReasons(){const s=$('reason');const prev=s.value;s.replaceChildren(...RG[kind].map(([g,rs])=>RG[kind].length>1?el('optgroup',{label:g},rs.map(r=>el('option',{text:r}))):null).filter(Boolean),...(RG[kind].length>1?[]:RG[kind][0][1].map(r=>el('option',{text:r}))));if(REASONS[kind].includes(prev))s.value=prev;reasonHint()}
+  function reasonHint(){$('reasonHint').textContent=HINT[$('reason').value]||''}
+  $('reason').addEventListener('change',reasonHint);
   $('kOut').onclick=()=>setKind('out'); $('kIn').onclick=()=>setKind('in'); $('kMove').onclick=()=>setKind('move');
   const other=w=>w==='1창고'?'2창고':'1창고';
   $('wh2').addEventListener('change',()=>{if(kind==='move'&&$('wh2').value&&(!$('wh').value||$('wh').value===$('wh2').value)){$('wh').value=other($('wh2').value)}updateAdd()});
