@@ -563,6 +563,7 @@ const ROOT = 'ledger';
     await Promise.all(out.map(async w=>{try{const s=await get(ref(fdb,ROOT+'/wonroomDone/'+fbKey(w.src)));if(s.exists()){w.dup=true;w.include=false}}catch(e){}}));
     wonRows=out; $('wonAllWh').value=''; $('wonPanel').hidden=false; renderWon(); $('wonPanel').scrollIntoView({behavior:'smooth',block:'start'});
   };
+  const setHint=w=>/세트|뚜껑\s*있음|포함|\d+\s*종|\+/.test(w.name+' '+w.opt);
   const partsOk=w=>w.parts.length&&w.parts.every(x=>x.code&&byCode.has(x.code)&&x.n>0);
   function partsWh(w){const ws=[...new Set(w.parts.filter(x=>byCode.has(x.code)).map(x=>whFor(byCode.get(x.code))))];return ws.length===1?ws[0]:''}
   function prodOptions(sel,list,cur){
@@ -597,7 +598,7 @@ const ROOT = 'ledger';
       if(multi&&ok)cell.append(el('div',{class:'code',text:'주문 '+w.qty+'개 → '+w.parts.map(x=>(byCode.get(x.code).option||label(byCode.get(x.code)))+' '+(w.qty*x.n)+'개').join(', ')}));
       const wh=el('select',{'aria-label':'창고'});wh.appendChild(el('option',{value:'',text:'— 선택 —'}));['1창고','2창고'].forEach(x=>{const o=el('option',{text:x});if(x===w.wh)o.selected=true;wh.appendChild(o)}); wh.onchange=()=>{w.wh=wh.value;renderWon()};
       const st=w.dup?el('span',{class:'pill done',text:'이미 기록됨'}):(!ok?el('span',{class:'need',text:'상품 선택 필요'}):!w.wh?el('span',{class:'need',text:'창고 선택 필요'}):
-        (w.how==='set'?el('span',{class:'pill wait',text:'사방넷 세트 구성 · 확인'}):(w.how===''&&w.cands.length>1&&!multi?el('span',{class:'pill wait',text:'후보 '+w.cands.length+'개 중 확인'}):el('span',{class:'pill i',text:multi?'세트 연결됨':'연결됨'}))));
+        (w.how==='set'?el('span',{class:'pill wait',text:'사방넷 세트 구성 · 확인'}):(!multi&&setHint(w)?el('span',{class:'need',text:'세트 상품 같아요. 구성품을 확인해주세요'}):(w.how===''&&w.cands.length>1&&!multi?el('span',{class:'pill wait',text:'후보 '+w.cands.length+'개 중 확인'}):el('span',{class:'pill i',text:multi?'세트 연결됨':'연결됨'})))));
       tb.appendChild(el('tr',{class:(w.include&&!w.dup)?'':'skip'},[el('td',{},[cb]),el('td',{},[el('div',{text:w.name}),el('div',{class:'code',text:w.opt})]),el('td',{class:'code',text:w.ext+(w.vendor?' · '+w.vendor:'')}),el('td',{class:'num',text:String(w.qty)}),cell,el('td',{},[wh]),el('td',{},[st])]));
     });
     $('wonSum').textContent='기록할 줄 '+ready+'개'+(need?' · 선택이 필요한 줄 '+need+'개':'')+(dup?' · 이미 기록됨 '+dup+'개':'');
